@@ -98,7 +98,6 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
 venv/
 ENV/
 env.bak/
@@ -138,3 +137,15 @@ Thumbs.db
 
 # Cursor
 .cursor/
+
+# Project specific
+data/database/*.db
+data/database/*.db-journal
+data/csv/*.csv
+data/images/*.html
+data/images/*.png
+data/strategy_results/**/*.csv
+logs/*.log
+
+# 自用
+.备忘
