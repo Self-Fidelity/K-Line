@@ -32,7 +32,25 @@ class MomentumStrategy(BaseStrategy):
         """
         super().__init__(
             name="Momentum Strategy",
-            description=f"Momentum Strategy (period: {period} days)"
+            description="动量策略：基于价格变化速度判断趋势",
+            detailed_description="""动量策略是一种基于价格变化速度的技术分析策略。
+
+策略原理：
+- 动量指标 = 当前价格 - N日前价格
+- 当动量指标从负转正时，表示价格开始上涨，产生买入信号
+- 当动量指标从正转负时，表示价格开始下跌，产生卖出信号
+
+适用场景：
+- 适用于趋势明显的市场
+- 可以捕捉价格变化的早期信号
+
+注意事项：
+- 周期设置需要根据股票特性调整
+- 周期越小，信号越敏感但可能产生假信号
+- 周期越大，信号越滞后但更可靠""",
+            parameter_descriptions={
+                "period": "动量计算周期：计算动量指标的天数，即当前价格与N日前价格的差值，默认10日",
+            }
         )
         self.period = period
     

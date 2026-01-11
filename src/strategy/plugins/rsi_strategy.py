@@ -37,7 +37,28 @@ class RSIStrategy(BaseStrategy):
         """
         super().__init__(
             name="RSI Strategy",
-            description=f"RSI Strategy (period: {period}, oversold: {oversold}, overbought: {overbought})"
+            description="RSI策略：基于相对强弱指标判断超买超卖",
+            detailed_description="""RSI（相对强弱指标）策略是一种基于动量的技术分析策略。
+
+策略原理：
+- RSI指标范围0-100，衡量股价上涨和下跌的强度
+- 当RSI < 超卖阈值时，表示股价可能被低估，产生买入信号
+- 当RSI > 超买阈值时，表示股价可能被高估，产生卖出信号
+- 当RSI从超卖区域上穿超卖阈值时，产生买入信号
+- 当RSI从超买区域下穿超买阈值时，产生卖出信号
+
+适用场景：
+- 适用于震荡市场
+- 在强趋势市场中可能过早产生反向信号
+
+注意事项：
+- 超卖/超买阈值需要根据股票特性调整
+- 阈值设置过严格可能错过机会，过宽松可能产生假信号""",
+            parameter_descriptions={
+                "period": "RSI计算周期：用于计算RSI指标的天数，周期越长指标越平滑，默认14日",
+                "oversold": "超卖阈值：RSI低于此值时认为超卖，数值越小越严格，默认30",
+                "overbought": "超买阈值：RSI高于此值时认为超买，数值越大越严格，默认70",
+            }
         )
         self.period = period
         self.oversold = oversold

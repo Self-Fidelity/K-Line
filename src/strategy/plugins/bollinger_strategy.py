@@ -34,7 +34,25 @@ class BollingerStrategy(BaseStrategy):
         """
         super().__init__(
             name="Bollinger Strategy",
-            description=f"Bollinger Bands Strategy (period: {period}, std_dev: {std_dev})"
+            description="布林带策略：基于价格与布林带上下轨的关系判断超买超卖",
+            detailed_description="""布林带（Bollinger Bands）策略是一种基于统计学的技术分析策略。
+
+策略原理：
+- 布林带由三条线组成：中轨（移动平均）、上轨（中轨+标准差倍数）、下轨（中轨-标准差倍数）
+- 当价格触及或跌破下轨时，表示超卖，可能产生买入信号
+- 当价格触及或突破上轨时，表示超买，可能产生卖出信号
+
+适用场景：
+- 适用于震荡市场
+- 在趋势市场中需要结合其他指标
+
+注意事项：
+- 标准差倍数越大，上下轨越宽，信号越少但更可靠
+- 标准差倍数越小，上下轨越窄，信号越多但可能产生假信号""",
+            parameter_descriptions={
+                "period": "移动平均周期：计算中轨（移动平均）的天数，默认20日",
+                "std_dev": "标准差倍数：用于计算上下轨的标准差倍数，数值越大布林带越宽，默认2.0",
+            }
         )
         self.period = period
         self.std_dev = std_dev

@@ -24,7 +24,6 @@ def analyze_strategy(
     stock_code: str,
     start_date: str = "",
     end_date: str = "",
-    initial_capital: float = 100000.0,
     plot_chart: bool = False,
     output_dir: Optional[str] = None,
 ) -> dict:
@@ -36,7 +35,6 @@ def analyze_strategy(
         stock_code: 股票代码
         start_date: 开始日期（格式：20240101）
         end_date: 结束日期（格式：20240101）
-        initial_capital: 初始资金
         plot_chart: 是否生成带信号的K线图
         output_dir: 输出目录（可选）
     
@@ -92,7 +90,6 @@ def analyze_strategy(
     stats = StrategyStatistics.calculate_statistics(
         df,
         strategy_result,
-        initial_capital=initial_capital,
     )
     
     # 打印统计结果
@@ -137,9 +134,6 @@ def main():
   
   # 分析策略并生成带信号的K线图
   python scripts/analyze_strategy.py --strategy "MA Strategy" --stock 000001 --plot
-  
-  # 指定初始资金
-  python scripts/analyze_strategy.py --strategy "MA Strategy" --stock 000001 --initial-capital 200000
         """,
     )
     
@@ -168,12 +162,6 @@ def main():
         help="结束日期（格式：20240101）",
     )
     parser.add_argument(
-        "--initial-capital",
-        type=float,
-        default=100000.0,
-        help="初始资金（默认100000）",
-    )
-    parser.add_argument(
         "--plot",
         action="store_true",
         help="生成带策略信号的K线图",
@@ -193,7 +181,6 @@ def main():
             stock_code=args.stock,
             start_date=args.start_date,
             end_date=args.end_date,
-            initial_capital=args.initial_capital,
             plot_chart=args.plot,
             output_dir=args.output_dir if args.output_dir else None,
         )

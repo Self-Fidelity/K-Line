@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 import pandas as pd
 from bokeh.plotting import figure, output_file, save
-from bokeh.models import ColumnDataSource, HoverTool, RangeTool, LabelSet, Label, Div
+from bokeh.models import ColumnDataSource, HoverTool, RangeTool, LabelSet, Label, Div, Range1d
 from bokeh.layouts import column, row
 from bokeh.io import export_png
 
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 class KLineChart:
     """K线图绘制类（使用Bokeh，输出HTML）"""
     
-    def __init__(self, width: int = 1200, height: int = 600):
+    def __init__(self, width: int = 1400, height: int = 700):
         """
         初始化K线图
         

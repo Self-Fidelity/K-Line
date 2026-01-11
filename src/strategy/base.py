@@ -8,16 +8,26 @@ import pandas as pd
 class BaseStrategy(ABC):
     """策略基类"""
     
-    def __init__(self, name: str, description: str = ""):
+    def __init__(
+        self, 
+        name: str, 
+        description: str = "",
+        detailed_description: str = "",
+        parameter_descriptions: Dict[str, str] = None,
+    ):
         """
         初始化策略
         
         Args:
             name: 策略名称
-            description: 策略描述
+            description: 策略简短描述
+            detailed_description: 策略详细说明（包含策略原理、使用方法等）
+            parameter_descriptions: 参数说明字典，key为参数名，value为参数说明
         """
         self.name = name
         self.description = description
+        self.detailed_description = detailed_description
+        self.parameter_descriptions = parameter_descriptions or {}
     
     @abstractmethod
     def analyze(
@@ -64,10 +74,17 @@ class BaseStrategy(ABC):
         获取策略信息
         
         Returns:
-            策略信息字典
+            策略信息字典，包含：
+            - name: 策略名称
+            - description: 策略简短描述
+            - detailed_description: 策略详细说明
+            - parameter_descriptions: 参数说明字典
+            - required_columns: 必需的列
         """
         return {
             "name": self.name,
             "description": self.description,
+            "detailed_description": self.detailed_description,
+            "parameter_descriptions": self.parameter_descriptions,
             "required_columns": self.get_required_columns(),
         }

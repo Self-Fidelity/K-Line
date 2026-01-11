@@ -36,7 +36,28 @@ class MACDStrategy(BaseStrategy):
         """
         super().__init__(
             name="MACD Strategy",
-            description=f"MACD Strategy (fast: {fast_period}, slow: {slow_period}, signal: {signal_period})"
+            description="MACD策略：基于移动平均收敛散度指标判断趋势",
+            detailed_description="""MACD（移动平均收敛散度）策略是一种趋势跟踪策略。
+
+策略原理：
+- MACD由快线（EMA12）、慢线（EMA26）和信号线（MACD的9日EMA）组成
+- MACD线 = 快线 - 慢线
+- 当MACD线上穿信号线时，形成"金叉"，产生买入信号
+- 当MACD线下穿信号线时，形成"死叉"，产生卖出信号
+
+适用场景：
+- 适用于趋势明显的市场
+- 在震荡市场中可能产生较多假信号
+
+注意事项：
+- 快线周期越小，对价格变化越敏感
+- 慢线周期越大，趋势判断越稳定
+- 信号线周期影响信号的滞后性""",
+            parameter_descriptions={
+                "fast_period": "快线EMA周期：计算快线指数移动平均的天数，数值越小越敏感，默认12日",
+                "slow_period": "慢线EMA周期：计算慢线指数移动平均的天数，数值越大越稳定，默认26日",
+                "signal_period": "信号线周期：计算信号线（MACD的EMA）的天数，影响信号滞后性，默认9日",
+            }
         )
         self.fast_period = fast_period
         self.slow_period = slow_period

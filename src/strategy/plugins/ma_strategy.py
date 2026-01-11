@@ -34,7 +34,26 @@ class MAStrategy(BaseStrategy):
         """
         super().__init__(
             name="MA Strategy",
-            description=f"Moving Average Strategy (short: {short_period} days, long: {long_period} days)"
+            description="移动平均策略：基于短期和长期移动平均线的交叉信号",
+            detailed_description="""移动平均（MA）策略是一种经典的技术分析策略。
+
+策略原理：
+- 计算短期移动平均线（SMA）和长期移动平均线（LMA）
+- 当短期均线上穿长期均线时，形成"金叉"，产生买入信号
+- 当短期均线下穿长期均线时，形成"死叉"，产生卖出信号
+
+适用场景：
+- 适用于趋势明显的市场
+- 在震荡市场中可能产生较多假信号
+
+注意事项：
+- 参数设置需要根据股票特性调整
+- 短期周期越小，信号越敏感但假信号越多
+- 长期周期越大，信号越滞后但更可靠""",
+            parameter_descriptions={
+                "short_period": "短期移动平均周期：计算短期均线的天数，数值越小对价格变化越敏感，默认5日",
+                "long_period": "长期移动平均周期：计算长期均线的天数，数值越大趋势判断越稳定，默认20日",
+            }
         )
         self.short_period = short_period
         self.long_period = long_period

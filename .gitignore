@@ -146,6 +146,3 @@ data/images/*.html
 data/images/*.png
 data/strategy_results/**/*.csv
 logs/*.log
-
-# 自用
-.备忘

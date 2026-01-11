@@ -55,7 +55,23 @@ class BullishEngulfingStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(
             name="Bullish Engulfing",
-            description="Bullish Engulfing Candlestick Pattern"
+            description="看涨吞没形态：看涨反转信号",
+            detailed_description="""看涨吞没（Bullish Engulfing）是一种看涨反转的蜡烛图形态。
+
+形态特征：
+- 第一根K线为阴线（下跌）
+- 第二根K线为阳线（上涨）
+- 第二根K线完全吞没第一根K线的实体
+- 第二根K线的开盘价低于第一根K线的收盘价
+- 第二根K线的收盘价高于第一根K线的开盘价
+
+交易信号：
+- 产生买入信号
+
+适用场景：
+- 出现在下跌趋势中，可能预示反转
+- 需要结合其他技术指标确认""",
+            parameter_descriptions={}
         )
     
     def analyze(
@@ -109,7 +125,23 @@ class BearishEngulfingStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(
             name="Bearish Engulfing",
-            description="Bearish Engulfing Candlestick Pattern"
+            description="看跌吞没形态：看跌反转信号",
+            detailed_description="""看跌吞没（Bearish Engulfing）是一种看跌反转的蜡烛图形态。
+
+形态特征：
+- 第一根K线为阳线（上涨）
+- 第二根K线为阴线（下跌）
+- 第二根K线完全吞没第一根K线的实体
+- 第二根K线的开盘价高于第一根K线的收盘价
+- 第二根K线的收盘价低于第一根K线的开盘价
+
+交易信号：
+- 产生卖出信号
+
+适用场景：
+- 出现在上涨趋势中，可能预示反转
+- 需要结合其他技术指标确认""",
+            parameter_descriptions={}
         )
     
     def analyze(
@@ -233,7 +265,24 @@ class HangingManStrategy(BaseStrategy):
         """
         super().__init__(
             name="Hanging Man",
-            description=f"Hanging Man Candlestick Pattern (shadow_ratio: {shadow_ratio})"
+            description="上吊线形态：看跌反转信号",
+            detailed_description="""上吊线（Hanging Man）是一种看跌反转的蜡烛图形态。
+
+形态特征：
+- 实体小，位于K线上部
+- 下影线长度至少是实体的2倍
+- 上影线很短或没有
+- 可能出现在上涨趋势中
+
+交易信号：
+- 产生卖出信号
+
+适用场景：
+- 出现在上涨趋势顶部，可能预示反转
+- 需要结合其他技术指标确认""",
+            parameter_descriptions={
+                "shadow_ratio": "影线比例：下影线长度与实体长度的最小比例，默认2.0",
+            }
         )
         self.shadow_ratio = shadow_ratio
     
@@ -297,7 +346,25 @@ class DojiStrategy(BaseStrategy):
         """
         super().__init__(
             name="Doji",
-            description=f"Doji Candlestick Pattern (lookback: {lookback}, threshold: {doji_threshold})"
+            description="十字星形态：市场犹豫信号",
+            detailed_description="""十字星（Doji）是一种表示市场犹豫不决的蜡烛图形态。
+
+形态特征：
+- 开盘价和收盘价非常接近（实体很小）
+- 表示买卖双方力量均衡
+
+交易信号：
+- 如果出现在下跌后，为买入信号
+- 如果出现在上涨后，为卖出信号
+
+适用场景：
+- 需要结合趋势方向判断
+- 上升趋势中的十字星可能是看跌信号
+- 下降趋势中的十字星可能是看涨信号""",
+            parameter_descriptions={
+                "lookback": "回看周期：用于判断趋势方向的天数，默认5日",
+                "doji_threshold": "十字星阈值：实体大小与总波动范围的比例，小于此值认为是十字星，默认0.1",
+            }
         )
         self.lookback = lookback
         self.doji_threshold = doji_threshold
@@ -364,7 +431,22 @@ class MorningStarStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(
             name="Morning Star",
-            description="Morning Star Candlestick Pattern"
+            description="早晨之星形态：看涨反转信号",
+            detailed_description="""早晨之星（Morning Star）是一种看涨反转的三根K线组合形态。
+
+形态特征：
+- 第一根K线为阴线（下跌）
+- 第二根K线为小实体（或十字星）
+- 第三根K线为阳线（上涨）
+- 第三根阳线的收盘价深入第一根阴线的实体内部
+
+交易信号：
+- 产生买入信号
+
+适用场景：
+- 出现在下跌趋势中，为看涨反转信号
+- 需要结合其他技术指标确认""",
+            parameter_descriptions={}
         )
     
     def analyze(
@@ -388,7 +470,7 @@ class MorningStarStrategy(BaseStrategy):
             third = df.iloc[i]  # 第三根：阳线
             
             # 第一根为阴线
-            if not self._is_bearish(first):
+            if not _is_bearish(first):
                 continue
             
             # 第二根为小实体（实体小于第一根实体的50%）
@@ -430,7 +512,22 @@ class EveningStarStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(
             name="Evening Star",
-            description="Evening Star Candlestick Pattern"
+            description="黄昏之星形态：看跌反转信号",
+            detailed_description="""黄昏之星（Evening Star）是一种看跌反转的三根K线组合形态。
+
+形态特征：
+- 第一根K线为阳线（上涨）
+- 第二根K线为小实体（或十字星）
+- 第三根K线为阴线（下跌）
+- 第三根阴线的收盘价深入第一根阳线的实体内部
+
+交易信号：
+- 产生卖出信号
+
+适用场景：
+- 出现在上涨趋势中，为看跌反转信号
+- 需要结合其他技术指标确认""",
+            parameter_descriptions={}
         )
     
     def analyze(
@@ -496,7 +593,21 @@ class HaramiStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(
             name="Harami",
-            description="Harami Candlestick Pattern"
+            description="孕线形态：反转信号",
+            detailed_description="""孕线（Harami）是一种反转的蜡烛图形态。
+
+形态特征：
+- 两根K线组合：第一根为大实体，第二根为小实体
+- 第二根K线的实体完全包含在第一根K线的实体内
+
+交易信号：
+- 看涨孕线：第一根为阴线，第二根为阳线（买入信号）
+- 看跌孕线：第一根为阳线，第二根为阴线（卖出信号）
+
+适用场景：
+- 可能出现在趋势转折点
+- 需要结合其他技术指标确认""",
+            parameter_descriptions={}
         )
     
     def analyze(
