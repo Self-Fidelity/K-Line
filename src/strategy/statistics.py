@@ -125,9 +125,10 @@ class StrategyStatistics:
             benchmark_return = (final_benchmark - initial_capital) / initial_capital * 100
             benchmark_max_dd = StrategyStatistics._calculate_max_drawdown(df['benchmark_curve'])
             
-            # 胜率计算
-            profitable_trades = len([t for t in trades if t['profit_rate'] > 0])
-            total_trades = len(trades)
+            # 胜率计算（只统计完成的交易，即卖出交易）
+            completed_trades = [t for t in trades if t.get('type') == 'sell' and 'profit_rate' in t]
+            profitable_trades = len([t for t in completed_trades if t.get('profit_rate', 0) > 0])
+            total_trades = len(completed_trades)
             win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0.0
 
             return {

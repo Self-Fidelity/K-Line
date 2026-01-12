@@ -45,13 +45,20 @@ async def health_check():
 
 
 # 导入路由
-from backend.app.api import auth, data, strategy, chart, batch_analysis
+from backend.app.api import auth, data, strategy, chart, batch_analysis, data_update, custom_strategy
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(data.router, prefix="/api/data", tags=["数据"])
 app.include_router(strategy.router, prefix="/api/strategy", tags=["策略"])
 app.include_router(chart.router, prefix="/api/chart", tags=["图表"])
 app.include_router(batch_analysis.router, prefix="/api/batch-analysis", tags=["批量分析"])
+app.include_router(data_update.router, prefix="/api/admin/data-update", tags=["数据更新管理"])
+app.include_router(custom_strategy.router, prefix="/api/custom-strategy", tags=["自定义策略"])
+
+# 启动数据更新服务
+from backend.app.services.data_update_service import DataUpdateService
+update_service = DataUpdateService()
+update_service.start_scheduler()
 
 # 挂载静态文件目录（用于图表HTML文件）
 # 添加src目录到路径以获取IMAGES_DIR

@@ -52,6 +52,18 @@ const routes: RouteRecordRaw[] = [
             component: () => import('@/views/BatchAnalysis.vue'),
             meta: { requiresAuth: true },
           },
+          {
+            path: 'admin/data-update',
+            name: 'DataUpdateManagement',
+            component: () => import('@/views/DataUpdateManagement.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true },
+          },
+          {
+            path: 'custom-strategy',
+            name: 'CustomStrategy',
+            component: () => import('@/views/CustomStrategy.vue'),
+            meta: { requiresAuth: true },
+          },
     ],
   },
 ]
@@ -62,7 +74,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
 
   if (to.meta.requiresAuth && !token) {
@@ -71,6 +83,16 @@ router.beforeEach((to, from, next) => {
   } else if (to.path === '/login' && token) {
     // 已登录但访问登录页，跳转到首页
     next('/')
+  } else if (to.meta.requiresAdmin) {
+    // 需要管理员权限
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    if (authStore.user?.role === 'admin') {
+      next()
+    } else {
+      // 非管理员，跳转到首页
+      next('/')
+    }
   } else {
     next()
   }

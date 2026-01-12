@@ -2,11 +2,18 @@
 
 import time
 from typing import List, Dict, Optional
-import akshare as ak
 import pandas as pd
 
 from src.utils.logger import get_logger
 from src.config import settings
+# 在导入 akshare 之前先配置它
+from src.utils.akshare_config import ensure_akshare_configured
+
+# 确保 akshare 已配置
+ensure_akshare_configured()
+
+# 现在导入 akshare
+import akshare as ak
 
 logger = get_logger(__name__)
 

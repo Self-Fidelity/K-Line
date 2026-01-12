@@ -4,9 +4,14 @@
       <template #header>
         <div class="card-header">
           <span>数据管理</span>
-          <el-button type="primary" @click="handleRefresh" :loading="refreshing">
+          <el-button 
+            v-if="isAdmin" 
+            type="primary" 
+            @click="handleRefresh" 
+            :loading="refreshing"
+          >
             <el-icon><Refresh /></el-icon>
-            刷新股票列表
+            刷新股票列表（从API）
           </el-button>
         </div>
       </template>
@@ -111,8 +116,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { dataAPI, type StockInfo } from '@/api/data'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -172,10 +179,16 @@ const filteredStocks = computed(() => {
   return result.slice(start, end)
 })
 
-const loadStockList = async (refresh: boolean = false) => {
+// 检查是否是管理员
+const isAdmin = computed(() => {
+  return authStore.user?.role === 'admin'
+})
+
+const loadStockList = async () => {
   loading.value = true
   try {
-    const response = await dataAPI.getStockList(selectedMarket.value, refresh)
+    // 普通用户只能从数据库读取，不再使用 refresh 参数
+    const response = await dataAPI.getStockList(selectedMarket.value)
     stocks.value = response.stocks
     currentPage.value = 1
     if (response.total > 0) {
@@ -192,9 +205,16 @@ const loadStockList = async (refresh: boolean = false) => {
 }
 
 const handleRefresh = async () => {
+  // 只有管理员才能刷新股票列表（从 API 获取）
   refreshing.value = true
   try {
-    await loadStockList(true)
+    const response = await dataAPI.refreshStockList(selectedMarket.value)
+    stocks.value = response.stocks
+    currentPage.value = 1
+    ElMessage.success(`已从 API 刷新股票列表，共 ${response.total} 只股票`)
+  } catch (error: any) {
+    console.error('刷新股票列表失败:', error)
+    ElMessage.error(error.response?.data?.detail || '刷新股票列表失败（需要管理员权限）')
   } finally {
     refreshing.value = false
   }
@@ -205,7 +225,7 @@ const handleSearch = () => {
 }
 
 const handleMarketChange = () => {
-  loadStockList(false)
+  loadStockList()
 }
 
 const handleSizeChange = () => {
@@ -242,7 +262,7 @@ const handleConfirmFetch = async () => {
     ElMessage.success(response.message || '数据获取成功')
     fetchDialogVisible.value = false
     // 刷新股票列表（更新最新数据日期）
-    await loadStockList(false)
+    await loadStockList()
   } catch (error: any) {
     console.error('获取数据失败:', error)
     ElMessage.error(error.response?.data?.detail || '获取数据失败')
@@ -261,7 +281,7 @@ const formatVolume = (volume: number): string => {
 }
 
 onMounted(() => {
-  loadStockList(false)
+  loadStockList()
 })
 </script>
 

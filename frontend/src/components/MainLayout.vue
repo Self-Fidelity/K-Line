@@ -3,7 +3,7 @@
     <!-- 顶部导航栏 -->
     <el-header class="header">
       <div class="header-left">
-        <h2 class="logo">K-Line 股票数据分析系统</h2>
+        <h2 class="logo">K-Line 数据分析系统</h2>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
@@ -54,6 +54,17 @@
                 <el-icon><DocumentCopy /></el-icon>
                 <span>批量分析</span>
               </el-menu-item>
+              <el-menu-item index="/custom-strategy">
+                <el-icon><Edit /></el-icon>
+                <span>自定义策略</span>
+              </el-menu-item>
+              <el-menu-item
+                v-if="isAdmin"
+                index="/admin/data-update"
+              >
+                <el-icon><Setting /></el-icon>
+                <span>数据更新管理</span>
+              </el-menu-item>
             </el-menu>
           </el-aside>
 
@@ -66,10 +77,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { User, ArrowDown, DataBoard, DataLine, TrendCharts, Picture, Operation, DocumentCopy } from '@element-plus/icons-vue'
+import { User, ArrowDown, DataBoard, DataLine, TrendCharts, Picture, Operation, DocumentCopy, Setting, Edit } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -78,6 +89,7 @@ const authStore = useAuthStore()
 
 const userInfo = computed(() => authStore.user)
 const activeMenu = computed(() => route.path)
+const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 const handleCommand = async (command: string) => {
   if (command === 'logout') {

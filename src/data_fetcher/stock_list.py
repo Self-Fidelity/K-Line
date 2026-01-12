@@ -3,7 +3,6 @@
 from typing import List, Dict, Optional
 from pathlib import Path
 import sys
-import akshare as ak
 import pandas as pd
 import sqlite3
 
@@ -13,6 +12,14 @@ sys.path.insert(0, str(src_dir))
 
 from src.utils.logger import get_logger
 from src.config import settings
+# 在导入 akshare 之前先配置它
+from src.utils.akshare_config import ensure_akshare_configured
+
+# 确保 akshare 已配置
+ensure_akshare_configured()
+
+# 现在导入 akshare
+import akshare as ak
 
 logger = get_logger(__name__)
 
@@ -37,13 +44,15 @@ class StockListManager:
         self,
         market: str = "main",
         refresh: bool = False,
+        force_from_api: bool = False,
     ) -> pd.DataFrame:
         """
         获取股票列表
         
         Args:
             market: 市场类型，可选值：'main'（主板）、'cyb'（创业板）、'kcb'（科创板）、'all'（全部）
-            refresh: 是否刷新缓存
+            refresh: 是否刷新缓存（已废弃，使用 force_from_api）
+            force_from_api: 是否强制从 API 获取（仅管理员可用）
         
         Returns:
             股票列表 DataFrame，包含字段：
@@ -51,18 +60,45 @@ class StockListManager:
             - name: 股票名称
             - market: 所属市场
         """
-        # 总是获取全部股票列表，然后根据market参数过滤
-        if self._stock_list_cache is None or refresh:
-            logger.info(f"从数据源获取股票列表")
-            self._stock_list_cache = self._fetch_stock_list("all")
-            logger.info(f"获取到 {len(self._stock_list_cache)} 只股票")
+        # 优先从数据库读取
+        if not force_from_api and (self._stock_list_cache is None or refresh):
+            logger.debug("尝试从数据库加载股票列表")
+            df_db = self._load_from_database()
+            if df_db is not None and not df_db.empty:
+                self._stock_list_cache = df_db
+                logger.info(f"从数据库加载了 {len(self._stock_list_cache)} 只股票")
+        
+        # 如果缓存为空或强制从 API 获取，则从 akshare 获取
+        if self._stock_list_cache is None or self._stock_list_cache.empty or force_from_api:
+            if force_from_api:
+                logger.info("管理员操作：从 akshare API 获取股票列表")
+            else:
+                logger.info("数据库中没有股票列表，从 akshare API 获取")
+            try:
+                self._stock_list_cache = self._fetch_stock_list("all")
+                # 保存到数据库
+                if not self._stock_list_cache.empty:
+                    self._save_to_database(self._stock_list_cache)
+                    logger.info(f"从 API 获取到 {len(self._stock_list_cache)} 只股票，已保存到数据库")
+            except Exception as e:
+                logger.error(f"从 API 获取股票列表失败: {e}")
+                # 如果 API 失败，尝试从数据库读取（即使可能为空）
+                if self._stock_list_cache is None or self._stock_list_cache.empty:
+                    df_db = self._load_from_database()
+                    if df_db is not None and not df_db.empty:
+                        self._stock_list_cache = df_db
+                        logger.warning("API 获取失败，使用数据库中的旧数据")
+                    else:
+                        # 如果数据库也为空，返回空 DataFrame
+                        logger.error("数据库和 API 都无法获取股票列表")
+                        return pd.DataFrame(columns=["code", "name", "market"])
         
         # 根据市场类型过滤
         df = self._stock_list_cache.copy()
         if market != "all":
             df = df[df["market"] == market].copy()
         
-        logger.info(f"过滤后，市场类型 {market} 共有 {len(df)} 只股票")
+        logger.debug(f"过滤后，市场类型 {market} 共有 {len(df)} 只股票")
         return df
     
     def _fetch_stock_list(self, market: str) -> pd.DataFrame:
@@ -118,18 +154,20 @@ class StockListManager:
         self,
         market: str = "main",
         refresh: bool = False,
+        force_from_api: bool = False,
     ) -> List[str]:
         """
         获取股票代码列表
         
         Args:
             market: 市场类型
-            refresh: 是否刷新缓存
+            refresh: 是否刷新缓存（已废弃）
+            force_from_api: 是否强制从 API 获取（仅管理员可用）
         
         Returns:
             股票代码列表
         """
-        df = self.get_stock_list(market, refresh)
+        df = self.get_stock_list(market, refresh, force_from_api)
         return df["code"].tolist()
     
     def get_stock_info(self, stock_code: str) -> Optional[Dict]:

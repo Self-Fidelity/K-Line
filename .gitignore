@@ -124,6 +124,10 @@ dmypy.json
 # Poetry
 poetry.lock
 
+# uv
+.venv/
+uv.lock
+
 # IDE
 .vscode/
 .idea/

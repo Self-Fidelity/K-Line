@@ -53,7 +53,7 @@ async def get_strategy_info(
 ):
     """获取策略详细信息"""
     try:
-        info = strategy_service.get_strategy_info(strategy_name)
+        info = strategy_service.get_strategy_info(strategy_name, user_id=current_user_id)
         if not info:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -69,6 +69,44 @@ async def get_strategy_info(
         )
 
 
+@router.get("/{strategy_name}/code")
+async def get_strategy_code(
+    strategy_name: str,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
+):
+    """获取系统策略的代码"""
+    try:
+        # 先检查策略是否存在
+        strategy_info = strategy_service.get_strategy_info(strategy_name, user_id=current_user_id)
+        if not strategy_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"策略 {strategy_name} 不存在",
+            )
+        
+        # 只有系统策略才能获取代码
+        if not strategy_info.get("is_system", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"策略 {strategy_name} 不是系统策略，无法获取代码",
+            )
+        
+        code = strategy_service.get_strategy_code(strategy_name)
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"无法获取策略 {strategy_name} 的源代码，请检查日志",
+            )
+        return {"code": code}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取策略代码失败: {str(e)}",
+        )
+
+
 @router.post("/analyze", response_model=StrategyAnalyzeResponse)
 async def analyze_strategy(
     request: StrategyAnalyzeRequest,
@@ -81,6 +119,7 @@ async def analyze_strategy(
             stock_code=request.stock_code,
             start_date=request.start_date,
             end_date=request.end_date,
+            user_id=current_user_id,
             **request.strategy_params,
         )
         return StrategyAnalyzeResponse(**result)

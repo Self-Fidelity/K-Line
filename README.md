@@ -16,7 +16,7 @@ K-Line 是一个用于获取、存储和分析中国A股市场数据的Python项
 ## 技术栈
 
 - **Python**: 3.12.3
-- **依赖管理**: Poetry / pip
+- **依赖管理**: uv
 - **数据获取**: akshare
 - **数据存储**: SQLite
 - **可视化**: Bokeh（HTML交互式图表）
@@ -51,42 +51,45 @@ K-Line/
 
 ## 安装说明
 
-### 1. 创建虚拟环境
+### 前置要求
 
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) - 快速的 Python 包管理工具
+
+安装 uv：
 ```bash
-# 创建虚拟环境
-python -m venv venv
-
-# Windows PowerShell 激活虚拟环境
-.\venv\Scripts\Activate.ps1
-
-# Windows CMD 激活虚拟环境
-venv\Scripts\activate.bat
-
-# Linux/Mac 激活虚拟环境
-source venv/bin/activate
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# 或者使用 pip: pip install uv
 ```
 
-### 2. 安装依赖
-
-#### 使用 pip（推荐）
+### 1. 创建虚拟环境并安装依赖
 
 ```bash
-# 确保虚拟环境已激活
-pip install -r requirements.txt
+# 使用 uv 创建虚拟环境并安装依赖
+uv venv
+uv pip install -r requirements.txt -r backend/requirements.txt
 ```
 
-#### 使用 Poetry（可选）
+### 2. 激活虚拟环境
 
 ```bash
-# 安装 Poetry（如果还没有安装）
-# 参考: https://python-poetry.org/docs/#installation
+# Linux/Mac
+source .venv/bin/activate
 
-# 安装依赖
-poetry install
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 
-# 激活虚拟环境
-poetry shell
+# Windows CMD
+.venv\Scripts\activate.bat
+```
+
+### 3. （可选）使用 uv 直接运行命令
+
+无需激活虚拟环境，uv 可以直接运行：
+```bash
+# 运行脚本
+uv run python scripts/setup.py
+uv run python scripts/fetch_data.py --stock 000001
 ```
 
 ## 使用方法
@@ -94,10 +97,11 @@ poetry shell
 ### 1. 初始化数据库
 
 ```bash
-# 使用 Poetry
-poetry run python scripts/setup.py
+# 使用 uv run（推荐，无需激活虚拟环境）
+uv run python scripts/setup.py
 
-# 或直接使用 Python（确保虚拟环境已激活）
+# 或激活虚拟环境后运行
+source .venv/bin/activate  # Linux/Mac
 python scripts/setup.py
 ```
 

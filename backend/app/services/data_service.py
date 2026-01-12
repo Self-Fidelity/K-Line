@@ -13,6 +13,9 @@ sys.path.insert(0, str(src_dir))
 from src.data_storage.sqlite_storage import SQLiteStorage
 from src.data_fetcher.fetcher import StockDataFetcher
 from src.data_fetcher.stock_list import StockListManager
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class DataService:
@@ -24,19 +27,29 @@ class DataService:
         self.fetcher = StockDataFetcher()
         self.stock_list_manager = StockListManager()
     
-    def get_stock_list(self, market: str = "main", refresh: bool = False) -> pd.DataFrame:
+    def get_stock_list(
+        self, 
+        market: str = "main", 
+        refresh: bool = False,
+        force_from_api: bool = False,
+    ) -> pd.DataFrame:
         """
         获取股票列表
         
         Args:
             market: 市场类型，'main'（沪深主板）、'sse'（上海主板）、
                    'szse'（深圳主板）、'cyb'（创业板）、'kcb'（科创板）、'all'（全部）
-            refresh: 是否刷新缓存
+            refresh: 是否刷新缓存（已废弃，仅用于兼容）
+            force_from_api: 是否强制从 API 获取（仅管理员可用）
         
         Returns:
             股票列表 DataFrame，包含字段：code, name, market, latest_date
         """
-        df = self.stock_list_manager.get_stock_list(market=market, refresh=refresh)
+        df = self.stock_list_manager.get_stock_list(
+            market=market, 
+            refresh=refresh,
+            force_from_api=force_from_api,
+        )
         
         # 添加最新数据日期
         df["latest_date"] = df["code"].apply(lambda code: self._get_latest_date(code))

@@ -3,7 +3,7 @@
     <el-card class="login-card">
       <template #header>
         <div class="card-header">
-          <h2>K-Line 股票数据分析系统</h2>
+          <h2>K-Line 数据分析系统</h2>
         </div>
       </template>
       <el-form :model="loginForm" :rules="rules" ref="loginFormRef" @submit.prevent="handleLogin">

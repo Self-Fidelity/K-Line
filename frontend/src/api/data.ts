@@ -26,9 +26,27 @@ export interface KlineData {
 }
 
 export const dataAPI = {
-  getStockList: async (market: string = 'main', refresh: boolean = false): Promise<StockListResponse> => {
+  getStockList: async (market: string = 'main'): Promise<StockListResponse> => {
+    // 注意：refresh 参数已移除，普通用户只能从数据库读取
     const response = await apiClient.get<StockListResponse>('/api/data/stocks', {
-      params: { market, refresh },
+      params: { market },
+    })
+    return response.data
+  },
+
+  // 管理员专用：刷新股票列表（从 akshare API 获取）
+  refreshStockList: async (market: string = 'all'): Promise<StockListResponse> => {
+    const response = await apiClient.post<StockListResponse>('/api/data/admin/refresh-stock-list', null, {
+      params: { market },
+    })
+    return response.data
+  },
+
+  // 管理员专用：批量更新股票数据
+  batchUpdateStocks: async (stockCodes?: string[], market?: string): Promise<any> => {
+    const response = await apiClient.post('/api/data/admin/batch-update-stocks', {
+      stock_codes: stockCodes,
+      market: market,
     })
     return response.data
   },

@@ -134,62 +134,134 @@
       <template #header>
         <div class="card-header">
           <span>比较结果</span>
-          <el-button type="primary" @click="handleViewChart">
-            <el-icon><Picture /></el-icon>
-            查看K线图
-          </el-button>
+          <div>
+            <el-button type="success" @click="handleExportReport" :disabled="!compareResult">
+              <el-icon><Download /></el-icon>
+              导出报告
+            </el-button>
+            <el-button type="primary" @click="handleViewChart" :disabled="!compareResult">
+              <el-icon><Picture /></el-icon>
+              查看详细K线图
+            </el-button>
+          </div>
         </div>
       </template>
 
-      <!-- 统计对比表 -->
-      <div v-if="compareResult.results && compareResult.results.length > 0" class="comparison-section">
-        <h3>统计对比</h3>
-        <el-table
-          :data="comparisonTableData"
-          stripe
-          border
-          style="width: 100%"
-          :default-sort="{ prop: 'cumulative_return', order: 'descending' }"
-        >
-          <el-table-column prop="strategy_name" label="策略名称" width="150" fixed="left" />
-          <el-table-column prop="total_signals" label="总信号数" width="100" align="right">
-            <template #default="{ row }">{{ formatStatValue(row.total_signals, 'total_signals') }}</template>
-          </el-table-column>
-          <el-table-column prop="buy_signals" label="买入信号" width="100" align="right">
-            <template #default="{ row }">{{ formatStatValue(row.buy_signals, 'buy_signals') }}</template>
-          </el-table-column>
-          <el-table-column prop="sell_signals" label="卖出信号" width="100" align="right">
-            <template #default="{ row }">{{ formatStatValue(row.sell_signals, 'sell_signals') }}</template>
-          </el-table-column>
-          <el-table-column prop="cumulative_return" label="累计收益率" width="120" align="right" sortable>
-            <template #default="{ row }">
-              <span :style="getStatValueStyle('cumulative_return')">
-                {{ formatStatValue(row.cumulative_return, 'cumulative_return') }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="win_rate" label="胜率" width="100" align="right" sortable>
-            <template #default="{ row }">
-              <span :style="getStatValueStyle('win_rate')">
-                {{ formatStatValue(row.win_rate, 'win_rate') }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="max_drawdown" label="最大回撤" width="120" align="right" sortable>
-            <template #default="{ row }">
-              <span :style="getStatValueStyle('max_drawdown')">
-                {{ formatStatValue(row.max_drawdown, 'max_drawdown') }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="total_trades" label="总交易次数" width="120" align="right">
-            <template #default="{ row }">{{ formatStatValue(row.total_trades, 'total_trades') }}</template>
-          </el-table-column>
-          <el-table-column prop="profitable_trades" label="盈利交易" width="120" align="right">
-            <template #default="{ row }">{{ formatStatValue(row.profitable_trades, 'profitable_trades') }}</template>
-          </el-table-column>
-        </el-table>
-      </div>
+      <!-- 标签页：统计对比和图表 -->
+      <el-tabs v-model="activeResultTab" type="border-card">
+        <!-- 统计对比标签页 -->
+        <el-tab-pane label="统计对比" name="statistics">
+          <div v-if="compareResult.results && compareResult.results.length > 0" class="comparison-section">
+            <el-table
+              :data="comparisonTableData"
+              stripe
+              border
+              style="width: 100%"
+              :default-sort="{ prop: 'cumulative_return', order: 'descending' }"
+              highlight-current-row
+            >
+              <el-table-column prop="strategy_name" label="策略名称" width="150" fixed="left">
+                <template #default="{ row }">
+                  <el-tag :type="getStrategyTagType(row)" size="small">
+                    {{ row.strategy_name }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="total_signals" label="总信号数" width="100" align="right" sortable>
+                <template #default="{ row }">{{ formatStatValue(row.total_signals, 'total_signals') }}</template>
+              </el-table-column>
+              <el-table-column prop="buy_signals" label="买入信号" width="100" align="right" sortable>
+                <template #default="{ row }">{{ formatStatValue(row.buy_signals, 'buy_signals') }}</template>
+              </el-table-column>
+              <el-table-column prop="sell_signals" label="卖出信号" width="100" align="right" sortable>
+                <template #default="{ row }">{{ formatStatValue(row.sell_signals, 'sell_signals') }}</template>
+              </el-table-column>
+              <el-table-column prop="cumulative_return" label="累计收益率" width="130" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'cumulative_return')">
+                    <el-icon v-if="getBestValue('cumulative_return') === row.cumulative_return" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.cumulative_return, 'cumulative_return') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="win_rate" label="胜率" width="110" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'win_rate')">
+                    <el-icon v-if="getBestValue('win_rate') === row.win_rate" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.win_rate, 'win_rate') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="max_drawdown" label="最大回撤" width="130" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'max_drawdown')">
+                    <el-icon v-if="getBestValue('max_drawdown') === row.max_drawdown" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.max_drawdown, 'max_drawdown') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="total_trades" label="总交易次数" width="120" align="right" sortable>
+                <template #default="{ row }">{{ formatStatValue(row.total_trades, 'total_trades') }}</template>
+              </el-table-column>
+              <el-table-column prop="profitable_trades" label="盈利交易" width="120" align="right" sortable>
+                <template #default="{ row }">{{ formatStatValue(row.profitable_trades, 'profitable_trades') }}</template>
+              </el-table-column>
+              <el-table-column prop="final_capital" label="最终资金" width="120" align="right" sortable>
+                <template #default="{ row }">
+                  {{ formatStatValue(row.final_capital, 'final_capital') }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
+        <!-- 收益率曲线对比标签页 -->
+        <el-tab-pane label="收益率曲线对比" name="equity">
+          <div v-if="compareResult.results && compareResult.results.length > 0" class="chart-section">
+            <KlineChart
+              :data="klineData"
+              :lines="equityLines"
+              :height="400"
+              :key="`equity-${compareResult.stock_code}`"
+            />
+          </div>
+        </el-tab-pane>
+
+        <!-- K线图对比标签页 -->
+        <el-tab-pane label="K线图对比" name="kline">
+          <div v-if="compareResult.results && compareResult.results.length > 0" class="chart-section">
+            <KlineChart
+              :data="klineData"
+              :markers="combinedMarkers"
+              :lines="strategyLines"
+              :height="500"
+              :key="`kline-${compareResult.stock_code}`"
+            />
+            <div class="marker-legend" v-if="combinedMarkers.length > 0">
+              <div class="legend-title">策略信号图例：</div>
+              <div class="legend-items">
+                <div
+                  v-for="(strategy, index) in compareResult.results.filter(r => r && !('error' in r))"
+                  :key="strategy.strategy_name"
+                  class="legend-item"
+                >
+                  <span
+                    class="legend-color"
+                    :style="{ backgroundColor: getStrategyColor(index) }"
+                  ></span>
+                  <span>{{ strategy.strategy_name }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
 
       <!-- 错误信息 -->
       <el-alert
@@ -209,9 +281,10 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Picture } from '@element-plus/icons-vue'
+import { Search, Picture, Trophy, Download } from '@element-plus/icons-vue'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI, type StockInfo } from '@/api/data'
+import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
 
 const router = useRouter()
 
@@ -220,6 +293,9 @@ const comparing = ref(false)
 const compareResult = ref<StrategyCompareResponse | null>(null)
 const strategyInfoMap = ref<Record<string, StrategyInfo>>({})
 const activeStrategyTab = ref<string>('')
+const activeResultTab = ref<string>('statistics')
+const klineData = ref<ChartData[]>([])
+const stockData = ref<any[]>([])
 
 const compareForm = reactive<StrategyCompareRequest>({
   strategy_names: [],
@@ -301,7 +377,7 @@ const searchStocks = async (queryString: string, cb: (results: any[]) => void) =
   }
 
   try {
-    const response = await dataAPI.getStockList('all', false)
+    const response = await dataAPI.getStockList('all')
     const results = response.stocks
       .filter(
         (stock) =>
@@ -355,6 +431,10 @@ const handleCompare = async () => {
 
     const result = await strategyAPI.compareStrategies(request)
     compareResult.value = result
+    
+    // 加载K线数据用于图表显示
+    await loadKlineDataForCompare()
+    
     ElMessage.success('比较完成')
   } catch (error: any) {
     console.error('策略比较失败:', error)
@@ -417,18 +497,73 @@ const formatStatValue = (value: any, key: string): string => {
     return `${Number(value).toFixed(2)}%`
   }
   
+  // 金额类型
+  if (key === 'final_capital') {
+    return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  
   return String(value)
 }
 
 // 获取统计值样式
-const getStatValueStyle = (key: string): Record<string, string> => {
-  if (key === 'cumulative_return' || key === 'win_rate') {
-    return { color: 'red' }
+const getStatValueStyle = (row: any, key: string): Record<string, string> => {
+  const value = row[key]
+  if (value === null || value === undefined) return {}
+  
+  if (key === 'cumulative_return') {
+    const isBest = getBestValue('cumulative_return') === value
+    return {
+      color: value >= 0 ? '#f56c6c' : '#67c23a',
+      fontWeight: isBest ? 'bold' : 'normal',
+    }
+  }
+  if (key === 'win_rate') {
+    const isBest = getBestValue('win_rate') === value
+    return {
+      color: value >= 50 ? '#f56c6c' : '#909399',
+      fontWeight: isBest ? 'bold' : 'normal',
+    }
   }
   if (key === 'max_drawdown') {
-    return { color: 'green' }
+    const isBest = getBestValue('max_drawdown') === value
+    // 最大回撤越小越好（绝对值）
+    return {
+      color: Math.abs(value) <= 10 ? '#67c23a' : Math.abs(value) <= 20 ? '#e6a23c' : '#f56c6c',
+      fontWeight: isBest ? 'bold' : 'normal',
+    }
   }
   return {}
+}
+
+// 获取最佳值（用于显示奖杯图标）
+const getBestValue = (key: string): number | null => {
+  if (!comparisonTableData.value || comparisonTableData.value.length === 0) return null
+  
+  const values = comparisonTableData.value
+    .map(row => row[key])
+    .filter(v => v !== null && v !== undefined)
+    .map(v => Number(v))
+  
+  if (values.length === 0) return null
+  
+  if (key === 'max_drawdown') {
+    // 最大回撤越小越好（绝对值）
+    return values.reduce((best, current) => Math.abs(current) < Math.abs(best) ? current : best)
+  } else {
+    // 其他指标越大越好
+    return Math.max(...values)
+  }
+}
+
+// 获取策略标签类型（根据排名）
+const getStrategyTagType = (row: any): string => {
+  const sortedByReturn = [...comparisonTableData.value]
+    .sort((a, b) => (b.cumulative_return || 0) - (a.cumulative_return || 0))
+  const rank = sortedByReturn.findIndex(r => r.strategy_name === row.strategy_name) + 1
+  
+  if (rank === 1) return 'success'
+  if (rank === 2) return 'warning'
+  return 'info'
 }
 
 // 获取参数标签
@@ -480,6 +615,214 @@ const errorResults = computed(() => {
   return compareResult.value.results.filter((result) => result && 'error' in result)
 })
 
+// 策略颜色列表（用于区分不同策略的信号）
+const strategyColors = [
+  '#26a69a', // 绿色
+  '#ef5350', // 红色
+  '#42a5f5', // 蓝色
+  '#ab47bc', // 紫色
+  '#ffa726', // 橙色
+  '#66bb6a', // 浅绿色
+  '#ec407a', // 粉色
+  '#26c6da', // 青色
+]
+
+const getStrategyColor = (index: number): string => {
+  return strategyColors[index % strategyColors.length]
+}
+
+// 加载K线数据用于图表显示
+const loadKlineDataForCompare = async () => {
+  if (!compareResult.value || !compareResult.value.stock_code) return
+  
+  try {
+    const response = await dataAPI.getKlineData(
+      compareResult.value.stock_code,
+      compareResult.value.start_date || undefined,
+      compareResult.value.end_date || undefined
+    )
+    
+    stockData.value = response || []
+    
+    // 格式化K线数据
+    klineData.value = (response || []).map((item: any) => {
+      let dateStr = item.trade_date || item.date
+      if (dateStr && typeof dateStr === 'string' && dateStr.includes('T')) {
+        dateStr = dateStr.split('T')[0]
+      }
+      
+      return {
+        time: dateStr || '',
+        open: Number(item.open) || 0,
+        high: Number(item.high) || 0,
+        low: Number(item.low) || 0,
+        close: Number(item.close) || 0,
+        volume: Number(item.volume) || 0,
+      }
+    }).filter((item: ChartData) => item.time)
+  } catch (error: any) {
+    console.error('加载K线数据失败:', error)
+  }
+}
+
+// 合并所有策略的标记（用于K线图显示）
+const combinedMarkers = computed<Marker[]>(() => {
+  if (!compareResult.value?.results) return []
+  
+  const markers: Marker[] = []
+  const validResults = compareResult.value.results.filter(r => r && !('error' in r))
+  
+  validResults.forEach((result, strategyIndex) => {
+    if (!result.result) return
+    
+    const color = getStrategyColor(strategyIndex)
+    
+    result.result.forEach((item: any) => {
+      let dateStr = item.date
+      if (dateStr) {
+        if (typeof dateStr === 'string' && dateStr.includes('T')) {
+          dateStr = dateStr.split('T')[0]
+        }
+      }
+      
+      if (!dateStr) return
+      
+      if (item.signal === 1) {
+        markers.push({
+          time: dateStr,
+          position: 'belowBar',
+          color: color,
+          shape: 'arrowUp',
+          text: `${result.strategy_name} 买入`,
+        })
+      } else if (item.signal === -1) {
+        markers.push({
+          time: dateStr,
+          position: 'aboveBar',
+          color: color,
+          shape: 'arrowDown',
+          text: `${result.strategy_name} 卖出`,
+        })
+      }
+    })
+  })
+  
+  return markers
+})
+
+// 收益率曲线数据
+const equityLines = computed<LineData[]>(() => {
+  if (!compareResult.value?.results) return []
+  
+  const lines: LineData[] = []
+  const validResults = compareResult.value.results.filter(r => r && !('error' in r))
+  
+  validResults.forEach((result, index) => {
+    if (!result.result || !result.statistics) return
+    
+    const color = getStrategyColor(index)
+    
+    // 从 statistics 中获取 equity_curve
+    let equityData: { time: string; value: number }[] = []
+    
+    if (result.statistics.equity_curve && Array.isArray(result.statistics.equity_curve)) {
+      // 使用后端计算的权益曲线
+      // equity_curve 的长度应该与 result 的长度一致
+      const equityCurve = result.statistics.equity_curve
+      equityData = result.result.map((item: any, idx: number) => {
+        let dateStr = item.date
+        if (dateStr && typeof dateStr === 'string' && dateStr.includes('T')) {
+          dateStr = dateStr.split('T')[0]
+        }
+        
+        // 确保索引不越界
+        const equity = idx < equityCurve.length ? equityCurve[idx] : (equityCurve[equityCurve.length - 1] || 100000)
+        return {
+          time: dateStr || '',
+          value: Number(equity) || 100000,
+        }
+      }).filter((d: any) => d.time && d.value !== null && d.value !== undefined)
+    } else {
+      // 如果没有权益曲线，使用累计收益率计算（线性增长）
+      const initialCapital = 100000
+      const finalReturn = (result.statistics.cumulative_return || 0) / 100
+      const totalDays = result.result.length
+      
+      equityData = result.result.map((item: any, idx: number) => {
+        let dateStr = item.date
+        if (dateStr && typeof dateStr === 'string' && dateStr.includes('T')) {
+          dateStr = dateStr.split('T')[0]
+        }
+        
+        // 线性插值计算每日权益
+        const progress = totalDays > 1 ? idx / (totalDays - 1) : 0
+        const equity = initialCapital * (1 + finalReturn * progress)
+        
+        return {
+          time: dateStr || '',
+          value: Number(equity) || initialCapital,
+        }
+      }).filter((d: any) => d.time && d.value !== null && d.value !== undefined)
+    }
+    
+    if (equityData.length > 0) {
+      lines.push({
+        name: result.strategy_name,
+        data: equityData,
+        color: color,
+        lineWidth: 2,
+        priceScaleId: 'right',
+      })
+    }
+  })
+  
+  return lines
+})
+
+// 策略指标线（如均线等）
+const strategyLines = computed<LineData[]>(() => {
+  // 可以根据需要添加策略的指标线，如MA、MACD等
+  return []
+})
+
+// 导出对比报告
+const handleExportReport = () => {
+  if (!compareResult.value) return
+  
+  // 构建CSV内容
+  const headers = ['策略名称', '总信号数', '买入信号', '卖出信号', '累计收益率', '胜率', '最大回撤', '总交易次数', '盈利交易', '最终资金']
+  const rows = comparisonTableData.value.map(row => [
+    row.strategy_name,
+    row.total_signals || 0,
+    row.buy_signals || 0,
+    row.sell_signals || 0,
+    `${(row.cumulative_return || 0).toFixed(2)}%`,
+    `${(row.win_rate || 0).toFixed(2)}%`,
+    `${(row.max_drawdown || 0).toFixed(2)}%`,
+    row.total_trades || 0,
+    row.profitable_trades || 0,
+    row.final_capital || 0,
+  ])
+  
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.join(','))
+  ].join('\n')
+  
+  // 创建下载链接
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.setAttribute('href', url)
+  link.setAttribute('download', `策略对比报告_${compareResult.value.stock_code}_${new Date().toISOString().split('T')[0]}.csv`)
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  
+  ElMessage.success('报告导出成功')
+}
+
 onMounted(() => {
   loadStrategies()
 
@@ -520,5 +863,45 @@ onMounted(() => {
   color: #909399;
   margin-top: 5px;
   line-height: 1.5;
+}
+
+.chart-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+.marker-legend {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+
+.legend-title {
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #303133;
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  display: inline-block;
 }
 </style>

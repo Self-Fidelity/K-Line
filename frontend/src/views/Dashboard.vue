@@ -97,7 +97,7 @@
     <el-card style="margin-top: 20px">
       <template #header>
         <div class="card-header">
-          <span>欢迎使用 K-Line 股票数据分析系统</span>
+          <span>欢迎使用 K-Line 数据分析系统</span>
         </div>
       </template>
       <div class="welcome-content">

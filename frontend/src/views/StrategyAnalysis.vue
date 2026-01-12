@@ -69,22 +69,31 @@
           </div>
           
           <div class="chart-wrapper">
-            <div v-if="!analysisResult && !analyzing" class="empty-chart">
+            <div v-if="analyzing" class="empty-chart">
+              <el-empty description="正在分析中..." />
+            </div>
+            <div v-else-if="!analysisResult" class="empty-chart">
               <el-empty description="请选择策略和股票进行分析" />
             </div>
-            
+            <div v-else-if="activeChartTab === 'kline' && klineData.length === 0" class="empty-chart">
+              <el-empty description="暂无K线数据" />
+            </div>
+            <div v-else-if="activeChartTab === 'equity' && equityChartData.length === 0" class="empty-chart">
+              <el-empty description="暂无权益曲线数据" />
+            </div>
             <KlineChart
-              v-else-if="activeChartTab === 'kline'"
+              v-if="activeChartTab === 'kline' && klineData.length > 0"
+              :key="`kline-${analysisResult?.stock_code}-${analysisResult?.strategy_name}-${Date.now()}`"
               :data="klineData"
               :markers="signalMarkers"
               :lines="indicatorLines"
               :height="600"
               :watermark="watermarkText"
             />
-            
             <KlineChart
-              v-else-if="activeChartTab === 'equity'"
-              :data="equityChartData"
+              v-if="activeChartTab === 'equity' && equityLines.length > 0"
+              :key="`equity-${analysisResult?.stock_code}-${analysisResult?.strategy_name}-${Date.now()}`"
+              :data="[]"
               :lines="equityLines"
               :height="600"
               :watermark="watermarkText"
@@ -224,15 +233,31 @@ const watermarkText = computed(() => {
 })
 
 const klineData = computed<ChartData[]>(() => {
-  if (!analysisResult.value?.result) return []
-  return analysisResult.value.result.map((item: any) => ({
-    time: item.date,
-    open: item.open,
-    high: item.high,
-    low: item.low,
-    close: item.close,
-    volume: item.volume
-  }))
+  if (!analysisResult.value?.result || analysisResult.value.result.length === 0) return []
+  
+  return analysisResult.value.result.map((item: any) => {
+    // 处理日期格式：如果是 datetime 对象或 ISO 字符串，转换为 YYYY-MM-DD 格式
+    let dateStr = item.date
+    if (dateStr) {
+      if (typeof dateStr === 'string') {
+        // 如果是 ISO 格式字符串，提取日期部分
+        if (dateStr.includes('T')) {
+          dateStr = dateStr.split('T')[0]
+        }
+      } else if (dateStr instanceof Date) {
+        dateStr = dateStr.toISOString().split('T')[0]
+      }
+    }
+    
+    return {
+      time: dateStr || '',
+      open: Number(item.open) || 0,
+      high: Number(item.high) || 0,
+      low: Number(item.low) || 0,
+      close: Number(item.close) || 0,
+      volume: Number(item.volume) || 0
+    }
+  }).filter(item => item.time) // 过滤掉没有时间的项
 })
 
 const signalMarkers = computed<Marker[]>(() => {
@@ -240,9 +265,23 @@ const signalMarkers = computed<Marker[]>(() => {
   const markers: Marker[] = []
   
   analysisResult.value.result.forEach((item: any) => {
+    // 处理日期格式
+    let dateStr = item.date
+    if (dateStr) {
+      if (typeof dateStr === 'string') {
+        if (dateStr.includes('T')) {
+          dateStr = dateStr.split('T')[0]
+        }
+      } else if (dateStr instanceof Date) {
+        dateStr = dateStr.toISOString().split('T')[0]
+      }
+    }
+    
+    if (!dateStr) return
+    
     if (item.signal === 1) {
       markers.push({
-        time: item.date,
+        time: dateStr,
         position: 'belowBar',
         color: '#e91e63',
         shape: 'arrowUp',
@@ -250,7 +289,7 @@ const signalMarkers = computed<Marker[]>(() => {
       })
     } else if (item.signal === -1) {
       markers.push({
-        time: item.date,
+        time: dateStr,
         position: 'aboveBar',
         color: '#2196F3',
         shape: 'arrowDown',
@@ -262,7 +301,7 @@ const signalMarkers = computed<Marker[]>(() => {
 })
 
 const indicatorLines = computed<LineData[]>(() => {
-  if (!analysisResult.value?.result) return []
+  if (!analysisResult.value?.result || analysisResult.value.result.length === 0) return []
   const data = analysisResult.value.result
   const lines: LineData[] = []
   
@@ -275,12 +314,33 @@ const indicatorLines = computed<LineData[]>(() => {
   const colors = ['#2962FF', '#E91E63', '#FF6D00', '#00B8D4']
   
   indicatorKeys.forEach((key, index) => {
-    lines.push({
-      name: key,
-      data: data.map((d: any) => ({ time: d.date, value: d[key] })).filter((d: any) => d.value),
-      color: colors[index % colors.length],
-      lineWidth: 1
-    })
+    const lineData = data.map((d: any) => {
+      // 处理日期格式
+      let dateStr = d.date
+      if (dateStr) {
+        if (typeof dateStr === 'string') {
+          if (dateStr.includes('T')) {
+            dateStr = dateStr.split('T')[0]
+          }
+        } else if (dateStr instanceof Date) {
+          dateStr = dateStr.toISOString().split('T')[0]
+        }
+      }
+      
+      return {
+        time: dateStr || '',
+        value: Number(d[key]) || 0
+      }
+    }).filter((d: any) => d.time && d.value !== null && d.value !== undefined && !isNaN(d.value))
+    
+    if (lineData.length > 0) {
+      lines.push({
+        name: key,
+        data: lineData,
+        color: colors[index % colors.length],
+        lineWidth: 1
+      })
+    }
   })
   
   return lines
@@ -290,36 +350,71 @@ const equityChartData = computed<ChartData[]>(() => {
   // 权益图本质上是线图，但KlineChart组件复用了K线结构
   // 这里我们用K线图组件画Equity Curve有点奇怪，但可以用LineSeries
   // 为了复用组件，我们构造一个只有close价格的数据集
-  if (!analysisResult.value?.statistics?.dates) return []
+  if (!analysisResult.value?.statistics?.dates || !analysisResult.value?.statistics?.equity_curve) return []
   
   const dates = analysisResult.value.statistics.dates
   const equity = analysisResult.value.statistics.equity_curve
   
-  return dates.map((date: string, i: number) => ({
-    time: date,
-    open: equity[i],
-    high: equity[i],
-    low: equity[i],
-    close: equity[i],
-    volume: 0
-  }))
+  if (!Array.isArray(dates) || !Array.isArray(equity) || dates.length !== equity.length) return []
+  
+  return dates.map((date: string, i: number) => {
+    // 确保日期格式正确
+    let dateStr = date
+    if (dateStr && typeof dateStr === 'string') {
+      if (dateStr.includes('T')) {
+        dateStr = dateStr.split('T')[0]
+      }
+    }
+    
+    const value = Number(equity[i]) || 0
+    return {
+      time: dateStr || '',
+      open: value,
+      high: value,
+      low: value,
+      close: value,
+      volume: 0
+    }
+  }).filter(item => item.time)
 })
 
 const equityLines = computed<LineData[]>(() => {
   if (!analysisResult.value?.statistics) return []
   const stats = analysisResult.value.statistics
   const dates = stats.dates
+  const equity = stats.equity_curve || []
+  const benchmark = stats.benchmark_curve || []
+  
+  if (!Array.isArray(dates) || dates.length === 0) return []
+  
+  const formatDate = (d: string) => {
+    if (typeof d === 'string') {
+      if (d.includes('T')) {
+        return d.split('T')[0]
+      }
+      return d
+    }
+    return String(d)
+  }
+  
+  const formatValue = (val: any) => Number(val) || 0
   
   return [
     {
       name: '策略权益',
-      data: dates.map((d: string, i: number) => ({ time: d, value: stats.equity_curve[i] })),
+      data: dates.map((d: string, i: number) => ({
+        time: formatDate(d),
+        value: formatValue(equity[i])
+      })).filter(d => d.time && !isNaN(d.value)),
       color: '#e91e63',
       lineWidth: 2
     },
     {
       name: '基准收益 (Buy&Hold)',
-      data: dates.map((d: string, i: number) => ({ time: d, value: stats.benchmark_curve[i] })),
+      data: dates.map((d: string, i: number) => ({
+        time: formatDate(d),
+        value: formatValue(benchmark[i])
+      })).filter(d => d.time && !isNaN(d.value)),
       color: '#78909c',
       lineWidth: 1
     }
