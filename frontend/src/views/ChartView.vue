@@ -1,494 +1,648 @@
 <template>
-  <div class="chart-view">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>K线图查看</span>
-        </div>
-      </template>
-
-      <!-- 查询表单 -->
-      <el-form :model="chartForm" label-width="100px" :inline="true">
-        <el-form-item label="股票代码" required>
-          <el-autocomplete
-            v-model="chartForm.stockCode"
-            :fetch-suggestions="searchStocks"
-            placeholder="输入股票代码或名称"
-            style="width: 200px"
-            @select="handleStockSelect"
-          />
-        </el-form-item>
-
-        <el-form-item label="股票名称">
-          <el-input
-            v-model="chartForm.stockName"
-            placeholder="自动填充"
-            style="width: 150px"
-            disabled
-          />
-        </el-form-item>
-
-        <el-form-item label="开始日期">
-          <el-date-picker
-            v-model="chartForm.startDate"
-            type="date"
-            placeholder="选择开始日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-            style="width: 150px"
-          />
-        </el-form-item>
-
-        <el-form-item label="结束日期">
-          <el-date-picker
-            v-model="chartForm.endDate"
-            type="date"
-            placeholder="选择结束日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-            style="width: 150px"
-          />
-        </el-form-item>
-
-        <el-form-item>
-          <el-button type="primary" @click="handleGenerateChart" :loading="generating">
-            <el-icon><Search /></el-icon>
-            生成图表
+  <div class="chart-view-container">
+    <div class="control-panel">
+      <!-- Search & Date Range -->
+      <div class="search-section">
+        <!-- Favorites Dropdown -->
+         <el-dropdown trigger="click" @command="handleFavoriteSelect">
+          <el-button :icon="Collection">
+            我的收藏 <el-icon class="el-icon--right"><arrow-down /></el-icon>
           </el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
-      </el-form>
-
-      <!-- 策略选择（可选） -->
-      <el-card v-if="showStrategyOptions" style="margin-top: 20px">
-        <template #header>
-          <div class="card-header">
-            <span>策略分析（可选）</span>
-          </div>
-        </template>
-        <el-form :model="chartForm" label-width="100px" :inline="true">
-          <el-form-item label="选择策略">
-            <el-select
-              v-model="chartForm.strategyName"
-              placeholder="选择策略（可选）"
-              clearable
-              style="width: 200px"
-            >
-              <el-option
-                v-for="strategy in strategies"
-                :key="strategy.name"
-                :label="strategy.name"
-                :value="strategy.name"
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
+              <el-dropdown-item 
+                v-for="fav in favorites" 
+                :key="fav.id" 
+                :command="fav"
               >
-                <div>
-                  <div style="font-weight: 500">{{ strategy.name }}</div>
-                  <div style="font-size: 12px; color: #909399">{{ strategy.description }}</div>
-                </div>
-              </el-option>
-            </el-select>
-          </el-form-item>
+                {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
-          <el-form-item v-if="chartForm.strategyName" label="图表类型">
-            <el-radio-group v-model="chartForm.chartType">
-              <el-radio :value="'kline'">K线图</el-radio>
-              <el-radio :value="'kline_with_ma'">K线图+均线</el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </el-form>
-      </el-card>
-
-      <!-- 策略参数配置 -->
-      <el-card v-if="chartForm.strategyName && currentStrategyInfo" style="margin-top: 20px">
-        <template #header>
-          <div class="card-header">
-            <span>策略参数配置</span>
-          </div>
-        </template>
-        <p v-if="Object.keys(strategyParams).length === 0" style="color: #909399">
-          该策略无需额外参数配置
-        </p>
-        <el-form
-          v-else
-          :model="strategyParams"
-          label-width="150px"
+        <el-autocomplete
+          v-model="searchQuery"
+          :fetch-suggestions="querySearch"
+          placeholder="股票代码/名称"
+          @select="handleSelect"
+          class="stock-search"
+          :trigger-on-focus="false"
         >
-          <el-form-item
-            v-for="(value, key) in strategyParams"
-            :key="key"
-            :label="getParameterLabel(key)"
-          >
-            <el-input-number
-              v-model="strategyParams[key]"
-              :min="getParameterMin(key)"
-              :precision="getParameterPrecision(key)"
-              style="width: 200px"
-            />
-            <div v-if="getParameterDescription(key)" class="parameter-description">
-              {{ getParameterDescription(key) }}
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+          <template #default="{ item }">
+            <div class="stock-item">
+              <span class="code">{{ item.value }}</span>
+              <span class="name">{{ item.stock.name }}</span>
             </div>
-          </el-form-item>
-        </el-form>
-      </el-card>
-    </el-card>
+          </template>
+        </el-autocomplete>
 
-    <!-- 图表显示区域 -->
-    <el-card v-if="chartUrl" style="margin-top: 20px">
-      <template #header>
-        <div class="card-header">
-          <span>图表</span>
-          <el-button type="primary" size="small" @click="handleDownloadChart">
-            <el-icon><Download /></el-icon>
-            下载图表
-          </el-button>
-        </div>
-      </template>
-      <div class="chart-container">
-        <iframe
-          :src="chartUrl"
-          frameborder="0"
-          class="chart-iframe"
-          @load="handleChartLoad"
-        ></iframe>
+        <!-- Favorite Toggle Button -->
+        <el-button 
+            :type="isFavorite ? 'warning' : 'default'" 
+            :icon="isFavorite ? StarFilled : Star" 
+            circle 
+            @click="toggleFavorite"
+            :disabled="!currentStock"
+            title="收藏当前股票"
+        />
+
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          :shortcuts="shortcuts"
+          format="YYYY-MM-DD"
+          value-format="YYYY-MM-DD"
+          @change="handleDateChange"
+          class="date-picker"
+        />
       </div>
-    </el-card>
 
-    <!-- 加载提示 -->
-    <el-card v-if="generating" style="margin-top: 20px">
-      <el-empty description="正在生成图表，请稍候..." :image-size="100" />
-    </el-card>
+      <!-- Main Indicators Control -->
+      <div class="indicator-group">
+        <span class="group-label">主图</span>
+        <div class="indicator-controls">
+          <el-popover placement="bottom" trigger="click" width="200">
+            <template #reference>
+              <div style="display: inline-block;">
+                <el-button size="small" :type="activeMainIndicator === 'MA' ? 'primary' : ''">MA</el-button>
+              </div>
+            </template>
+            <div class="checkbox-list">
+              <el-checkbox v-model="maConfig.ma5" label="MA5" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma10" label="MA10" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma20" label="MA20" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma30" label="MA30" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma60" label="MA60" @change="updateLines" />
+            </div>
+          </el-popover>
+          
+          <el-tooltip content="清除主图指标" placement="top" :show-after="500">
+             <el-button size="small" circle :icon="Close" @click="clearMainIndicator" />
+          </el-tooltip>
+        </div>
+      </div>
+
+      <!-- Sub Indicators Control -->
+      <div class="indicator-group">
+        <span class="group-label">副图</span>
+        <el-radio-group v-model="selectedSubIndicator" size="small" @change="updateLines">
+          <el-radio-button value="VOL">VOL</el-radio-button>
+          <el-radio-button value="MACD">MACD</el-radio-button>
+          <el-radio-button value="KDJ">KDJ</el-radio-button>
+          <el-radio-button value="RSI">RSI</el-radio-button>
+          <el-radio-button value="WR">WR</el-radio-button>
+          <el-radio-button value="CCI">CCI</el-radio-button>
+          <el-radio-button value="BIAS">BIAS</el-radio-button>
+          <el-radio-button value="OBV">OBV</el-radio-button>
+        </el-radio-group>
+        <el-popover placement="bottom" trigger="hover" width="300">
+          <template #reference>
+            <el-icon class="help-icon"><QuestionFilled /></el-icon>
+          </template>
+          <div class="indicator-help">
+            <div v-if="activeMainIndicator">
+              <div class="title">{{ indicatorInfo[activeMainIndicator].name }}</div>
+              <div class="desc">{{ indicatorInfo[activeMainIndicator].desc }}</div>
+              <el-divider style="margin: 8px 0" />
+            </div>
+            <div class="title">{{ subIndicators[selectedSubIndicator].name }}</div>
+            <div class="desc">{{ subIndicators[selectedSubIndicator].desc }}</div>
+          </div>
+        </el-popover>
+      </div>
+
+      <div class="action-section">
+         <el-button type="primary" @click="fetchData" :loading="loading">
+           <el-icon><Refresh /></el-icon> 刷新
+         </el-button>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <!-- Chart Area -->
+      <div class="chart-wrapper" v-loading="loading">
+        <div v-if="!currentStock" class="empty-state">
+          <el-empty description="请选择或输入股票代码开始分析" />
+        </div>
+        <KlineChart 
+          v-else
+          :data="klineData" 
+          :lines="lines"
+          autosize
+          :watermark="currentStock?.name"
+          :dark-mode="isDark"
+        />
+      </div>
+
+      <!-- Statistics Panel (Sidebar) -->
+      <div class="stats-panel" v-if="currentStock">
+        <div class="panel-header">
+          <h3>统计分析</h3>
+          <span class="period">{{ dateRange?.[0] }} ~ {{ dateRange?.[1] }}</span>
+        </div>
+
+        <div class="stat-card">
+          <h4>区间表现</h4>
+          <div class="stat-grid">
+            <div class="stat-item">
+              <span class="label">区间涨跌幅</span>
+              <span class="value" :class="getValueColor(stats.totalReturn)">
+                {{ stats.totalReturn > 0 ? '+' : '' }}{{ stats.totalReturn }}%
+              </span>
+            </div>
+            <div class="stat-item">
+              <span class="label">最大回撤</span>
+              <span class="value text-down">{{ stats.maxDrawdown }}%</span>
+            </div>
+            <div class="stat-item">
+              <span class="label">起始价</span>
+              <span class="value">{{ stats.startPrice }}</span>
+            </div>
+             <div class="stat-item">
+              <span class="label">结束价</span>
+              <span class="value">{{ stats.endPrice }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="label">最高价</span>
+              <span class="value">{{ stats.maxPrice }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="label">最低价</span>
+              <span class="value">{{ stats.minPrice }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Search, Download } from '@element-plus/icons-vue'
-import { chartAPI, type ChartGenerateRequest } from '@/api/chart'
-import { dataAPI } from '@/api/data'
-import { strategyAPI, type StrategyInfo } from '@/api/strategy'
+import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
+import { Search, Refresh, Close, QuestionFilled, Star, StarFilled, Collection, ArrowDown } from '@element-plus/icons-vue';
+import { useDark } from '@vueuse/core';
+import { ElMessage } from 'element-plus';
+import KlineChart, { type ChartData, type LineData } from '@/components/KlineChart.vue';
+import { dataAPI, type StockInfo } from '@/api/data';
+import { watchlistAPI, type WatchlistItem } from '@/api/watchlist';
+import { calculateStatistics } from '@/utils/statistics';
+import { 
+    calculateMA, calculateMACD, calculateKDJ, calculateRSI,
+    calculateWR, calculateCCI, calculateBIAS, calculateOBV 
+} from '@/utils/indicators';
 
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const isDark = useDark();
 
-const generating = ref(false)
-const chartUrl = ref<string>('')
-const chartId = ref<string>('')
-const strategies = ref<StrategyInfo[]>([])
-const showStrategyOptions = ref(false)
-const currentStrategyInfo = ref<StrategyInfo | null>(null)
-const strategyParams = reactive<Record<string, any>>({})
+// Indicator Metadata
+const indicatorInfo: Record<string, { name: string, desc: string }> = {
+  MA: { name: '移动平均线', desc: '将一定时期内的证券价格（指数）加以平均，并把不同时间的平均值连接起来，形成一根MA，用以观察证券价格变动趋势的一种技术指标。' },
+};
 
-// 默认参数配置（可以根据策略类型设置默认值）
-const defaultParams: Record<string, Record<string, number>> = {
-  'MA Strategy': { short_period: 5, long_period: 20 },
-  'RSI Strategy': { period: 14, overbought: 70, oversold: 30 },
-  'MACD Strategy': { fast_period: 12, slow_period: 26, signal_period: 9 },
-  'Bollinger Strategy': { period: 20, num_std: 2 },
-  'Momentum Strategy': { period: 10 },
-}
+const subIndicators: Record<string, { name: string, desc: string }> = {
+  VOL: { name: '成交量 (Volume)', desc: '是指在某一时段内具体成交的总手数。成交量是一种供需的表现，指一个时间单位内对某项交易成交的数量。' },
+  MACD: { name: '平滑异同移动平均线', desc: '利用收盘价的短期（常用为12日）指数移动平均线与长期（常用为26日）指数移动平均线之间的聚合与分离状况，对买进、卖出时机作出研判的技术指标。' },
+  KDJ: { name: '随机指标', desc: '通过一个特定的周期内出现过的最高价、最低价及最后一个计算周期的收盘价及这三者之间的比例关系，来计算未成熟随机值RSV，然后计算K值、D值与J值。' },
+  RSI: { name: '相对强弱指标', desc: '通过比较一段时期内的平均收盘涨数和平均收盘跌数来分析市场买沽盘的意向和实力，从而作出未来市场的走势。' },
+  WR: { name: '威廉指标', desc: '主要用于辅助研判股价处于超买还是超卖状态。W%R 利用摆动点来度量市场的超买超卖现象。' },
+  CCI: { name: '顺势指标', desc: '专门测量股价、外汇或者贵金属交易是否已超出常态分布范围。属于超买超卖类指标中较特殊的一种。' },
+  BIAS: { name: '乖离率', desc: '测算股价在波动过程中与移动平均线出现偏离的程度，从而得出股价在剧烈波动时因偏离移动平均趋势而造成可能的回档或反弹。' },
+  OBV: { name: '能量潮', desc: '通过统计成交量变动的趋势来推测股价趋势。将成交量值予以数量化，制成趋势线，配合股价趋势线，从价格的变动及成交量的增减关系，推测市场气氛。' }
+};
 
-const chartForm = reactive<ChartGenerateRequest & { chartType: string }>({
-  stockCode: '',
-  stockName: '',
-  startDate: '',
-  endDate: '',
-  strategyName: '',
-  strategy_params: {},
-  chart_type: 'kline',
-  chartType: 'kline',
-})
+// State
+const loading = ref(false);
+const searchQuery = ref('');
+const currentStock = ref<StockInfo | null>(null);
+const dateRange = ref<[string, string]>(['', '']);
+const klineData = ref<ChartData[]>([]);
 
-// 从路由参数获取股票信息
-onMounted(async () => {
-  const stock = route.query.stock as string
-  const name = route.query.name as string
-  const strategy = route.query.strategy as string
-  const start = route.query.start as string
-  const end = route.query.end as string
+// Watchlist
+const favorites = ref<WatchlistItem[]>([]);
+const isFavorite = computed(() => {
+    if (!currentStock.value) return false;
+    return favorites.value.some(f => f.stock_code === currentStock.value?.code);
+});
 
-  // 先加载策略列表
-  await loadStrategies()
+// Indicator Selection
+const activeMainIndicator = ref<string>('MA'); // 'MA' or ''
+const selectedSubIndicator = ref<string>('VOL');
 
-  // 设置日期（从路由参数获取，或使用默认值）
-  if (start && end) {
-    chartForm.startDate = start
-    chartForm.endDate = end
-  } else {
-    // 设置默认日期（最近30天）
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - 30)
-    chartForm.endDate = endDate.toISOString().split('T')[0]
-    chartForm.startDate = startDate.toISOString().split('T')[0]
+// Configs
+const maConfig = reactive({ ma5: true, ma10: true, ma20: true, ma30: false, ma60: false });
+
+// Chart Data
+const lines = ref<LineData[]>([]);
+
+// Statistics
+const stats = computed(() => {
+  const baseStats = calculateStatistics(klineData.value);
+  let maxPrice = 0;
+  let minPrice = 0;
+  if (klineData.value.length > 0) {
+     maxPrice = Math.max(...klineData.value.map(d => d.high));
+     minPrice = Math.min(...klineData.value.map(d => d.low));
   }
+  return { ...baseStats, maxPrice, minPrice };
+});
 
-  if (stock) {
-    chartForm.stockCode = stock
-    chartForm.stockName = name || ''
-    
-    // 如果从策略分析跳转，设置策略
-    if (strategy) {
-      chartForm.strategyName = strategy
-      showStrategyOptions.value = true
-      // 加载策略信息和参数
-      await handleStrategyChange(strategy)
-    }
-    
-    // 自动生成图表
-    handleGenerateChart()
-  }
-})
+// Date Shortcuts
+const shortcuts = [
+  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
+  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
+  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
+  { text: '今年以来', value: () => { const end = new Date(); const start = new Date(new Date().getFullYear(), 0, 1); return [start, end]; } },
+];
 
-// 加载策略列表
-const loadStrategies = async () => {
+const getValueColor = (val: number) => {
+  if (val > 0) return 'text-up';
+  if (val < 0) return 'text-down';
+  return '';
+};
+
+const querySearch = async (queryString: string, cb: any) => {
+  if (!queryString) return cb([]);
   try {
-    const response = await strategyAPI.listStrategies()
-    strategies.value = response.strategies
-  } catch (error: any) {
-    console.error('加载策略列表失败:', error)
+    const res = await dataAPI.getStockList('all');
+    const results = res.stocks
+      .filter(s => s.code.includes(queryString) || s.name.includes(queryString))
+      .slice(0, 10)
+      .map(s => ({ value: s.code, stock: s }));
+    cb(results);
+  } catch (e) {
+    console.error(e);
+    cb([]);
   }
-}
+};
 
-// 策略变更处理
-const handleStrategyChange = async (strategyName: string) => {
-  if (!strategyName) {
-    currentStrategyInfo.value = null
-    Object.keys(strategyParams).forEach((key) => delete strategyParams[key])
-    return
-  }
+const handleSelect = (item: any) => {
+  currentStock.value = item.stock;
+  fetchData();
+};
 
-  try {
-    // 获取策略详细信息
-    const info = await strategyAPI.getStrategyInfo(strategyName)
-    currentStrategyInfo.value = info
+const handleDateChange = () => {
+  if (currentStock.value) fetchData();
+};
 
-    // 初始化策略参数
-    Object.keys(strategyParams).forEach((key) => delete strategyParams[key])
-    
-    // 初始化策略参数
-    // 注意：后端返回的parameter_descriptions是字符串字典，不是对象字典
-    // 我们需要从策略的默认参数中获取默认值
-    if (info.parameter_descriptions) {
-      for (const [key] of Object.entries(info.parameter_descriptions)) {
-        // 设置默认值（可以根据策略类型设置不同的默认值）
-        // 这里先使用简单的默认值，后续可以从后端获取
-        strategyParams[key] = 1
-      }
-    }
-    
-    // 如果有策略实例，可以获取默认参数值
-    // 但当前后端返回的是字符串，所以我们需要使用硬编码的默认值
-    // 或者从parameter_descriptions字符串中解析默认值（如果字符串中包含默认值信息）
-  } catch (error: any) {
-    console.error('获取策略信息失败:', error)
-    ElMessage.error('获取策略信息失败')
-  }
-}
+const clearMainIndicator = () => {
+    activeMainIndicator.value = '';
+    updateLines();
+};
 
-// 搜索股票
-const searchStocks = async (queryString: string, cb: (suggestions: any[]) => void) => {
-  if (!queryString) {
-    cb([])
-    return
+const updateLines = () => {
+  const newLines: LineData[] = [];
+  const data = klineData.value;
+  if (data.length === 0) {
+      lines.value = [];
+      return;
   }
 
-  try {
-    const response = await dataAPI.getStockList('all', false)
-    const stocks = response.stocks.filter(
-      (stock) =>
-        stock.code.toLowerCase().includes(queryString.toLowerCase()) ||
-        stock.name.toLowerCase().includes(queryString.toLowerCase())
-    )
-    const suggestions = stocks.slice(0, 10).map((stock) => ({
-      value: stock.code,
-      label: `${stock.code} - ${stock.name}`,
-      stock: stock,
-    }))
-    cb(suggestions)
-  } catch (error: any) {
-    console.error('搜索股票失败:', error)
-    cb([])
-  }
-}
-
-// 股票选择
-const handleStockSelect = (item: any) => {
-  if (item.stock) {
-    chartForm.stockCode = item.stock.code
-    chartForm.stockName = item.stock.name
-  }
-}
-
-// 生成图表
-const handleGenerateChart = async () => {
-  if (!chartForm.stockCode) {
-    ElMessage.warning('请输入股票代码')
-    return
+  // --- Main Chart Indicators ---
+  if (activeMainIndicator.value === 'MA') {
+      if (maConfig.ma5) newLines.push({ name: 'MA5', data: calculateMA(5, data), color: '#E91E63' });
+      if (maConfig.ma10) newLines.push({ name: 'MA10', data: calculateMA(10, data), color: '#2196F3' });
+      if (maConfig.ma20) newLines.push({ name: 'MA20', data: calculateMA(20, data), color: '#FF9800' });
+      if (maConfig.ma30) newLines.push({ name: 'MA30', data: calculateMA(30, data), color: '#9C27B0' });
+      if (maConfig.ma60) newLines.push({ name: 'MA60', data: calculateMA(60, data), color: '#009688' });
   }
 
-  generating.value = true
-  chartUrl.value = ''
-
-  try {
-    // 更新策略参数（从表单中获取）
-    if (chartForm.strategyName && Object.keys(strategyParams).length > 0) {
-      chartForm.strategy_params = { ...strategyParams }
-    }
-    
-    // 构建请求
-    const request: ChartGenerateRequest = {
-      stock_code: chartForm.stockCode,
-      stock_name: chartForm.stockName,
-      start_date: chartForm.startDate || undefined,
-      end_date: chartForm.endDate || undefined,
-      strategy_name: chartForm.strategyName || undefined,
-      strategy_params: chartForm.strategy_params || {},
-      chart_type: chartForm.chartType === 'kline_with_ma' ? 'kline_with_ma' : 'kline',
-      ma_periods: chartForm.chartType === 'kline_with_ma' ? [5, 20, 60] : undefined,
-    }
-
-    const response = await chartAPI.generateChart(request)
-    chartId.value = response.chart_id
-    
-    // 获取图表URL（后端已配置静态文件服务）
-    chartUrl.value = response.chart_url
-    
-    // 如果chart_url是相对路径，转换为完整URL（使用后端API地址）
-    if (chartUrl.value.startsWith('/')) {
-      // 使用后端API地址（从apiClient获取）
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-      chartUrl.value = `${apiBaseUrl}${chartUrl.value}`
-    }
-    
-    ElMessage.success('图表生成成功')
-    showStrategyOptions.value = true
-  } catch (error: any) {
-    console.error('生成图表失败:', error)
-    ElMessage.error(error.response?.data?.detail || '生成图表失败')
-  } finally {
-    generating.value = false
-  }
-}
-
-// 图表加载完成
-const handleChartLoad = () => {
-  console.log('图表加载完成')
-}
-
-// 下载图表
-const handleDownloadChart = () => {
-  if (chartUrl.value) {
-    // 打开新窗口下载
-    window.open(chartUrl.value, '_blank')
-  }
-}
-
-// 获取参数标签（将下划线命名转换为中文标签）
-const getParameterLabel = (key: string): string => {
-  const labelMap: Record<string, string> = {
-    'short_period': '短期周期',
-    'long_period': '长期周期',
-    'period': '周期',
-    'num_std': '标准差倍数',
-    'std_dev': '标准差倍数',
-    'oversold': '超卖阈值',
-    'overbought': '超买阈值',
-    'fast_period': '快线周期',
-    'slow_period': '慢线周期',
-    'signal_period': '信号线周期',
-    'shadow_ratio': '影线比例',
-    'lookback': '回看周期',
-    'doji_threshold': '十字星阈值',
-  }
-  return labelMap[key] || key
-}
-
-// 获取参数描述
-const getParameterDescription = (key: string): string => {
-  if (!currentStrategyInfo.value?.parameter_descriptions) return ''
-  // 后端返回的是字符串字典，直接返回字符串
-  const desc = currentStrategyInfo.value.parameter_descriptions[key]
-  return typeof desc === 'string' ? desc : ''
-}
-
-// 获取参数最小值
-const getParameterMin = (key: string): number => {
-  if (!currentStrategyInfo.value?.parameter_descriptions) return 1
-  const paramDesc = currentStrategyInfo.value.parameter_descriptions[key] as any
-  return paramDesc?.min ?? 1
-}
-
-// 获取参数精度
-const getParameterPrecision = (key: string): number => {
-  if (!currentStrategyInfo.value?.parameter_descriptions) return 0
-  // 如果参数名包含std、oversold、overbought等，使用1位小数
-  if (key.includes('std') || key.includes('oversold') || key.includes('overbought')) {
-    return 1
-  }
-  return 0
-}
-
-// 重置表单
-const handleReset = () => {
-  chartForm.stockCode = ''
-  chartForm.stockName = ''
-  chartForm.startDate = ''
-  chartForm.endDate = ''
-  chartForm.strategyName = ''
-  chartForm.chartType = 'kline'
-  chartUrl.value = ''
-  chartId.value = ''
-  showStrategyOptions.value = false
-  currentStrategyInfo.value = null
-  Object.keys(strategyParams).forEach((key) => delete strategyParams[key])
+  // --- Sub Chart Indicators ---
+  const sub = selectedSubIndicator.value;
   
-  // 设置默认日期
-  const end = new Date()
-  const start = new Date()
-  start.setDate(start.getDate() - 30)
-  chartForm.endDate = end.toISOString().split('T')[0]
-  chartForm.startDate = start.toISOString().split('T')[0]
-}
+  if (sub === 'VOL') {
+      // Create Volume histogram manually for sub chart
+      const volData = data.map(d => ({
+          time: d.time,
+          value: d.volume || 0,
+          color: (d.close >= d.open) ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)'
+      }));
+      newLines.push({ name: 'VOL', data: volData, color: '', pane: 'sub', style: 'histogram' });
+  } else if (sub === 'MACD') {
+      const { dif, dea, macd } = calculateMACD(12, 26, 9, data);
+      newLines.push(
+          { name: 'DIF', data: dif, color: '#2196F3', pane: 'sub' },
+          { name: 'DEA', data: dea, color: '#FF9800', pane: 'sub' },
+          { name: 'MACD', data: macd, color: '', pane: 'sub', style: 'histogram' }
+      );
+  } else if (sub === 'KDJ') {
+      const { k, d, j } = calculateKDJ(9, 3, 3, data);
+      newLines.push(
+          { name: 'K', data: k, color: '#E91E63', pane: 'sub' },
+          { name: 'D', data: d, color: '#2196F3', pane: 'sub' },
+          { name: 'J', data: j, color: '#FF9800', pane: 'sub' }
+      );
+  } else if (sub === 'RSI') {
+      const rsi6 = calculateRSI(6, data);
+      const rsi12 = calculateRSI(12, data);
+      const rsi24 = calculateRSI(24, data);
+      newLines.push(
+          { name: 'RSI6', data: rsi6, color: '#E91E63', pane: 'sub' },
+          { name: 'RSI12', data: rsi12, color: '#2196F3', pane: 'sub' },
+          { name: 'RSI24', data: rsi24, color: '#FF9800', pane: 'sub' }
+      );
+  } else if (sub === 'WR') {
+      const wr = calculateWR(14, data);
+      newLines.push({ name: 'WR', data: wr, color: '#9C27B0', pane: 'sub' });
+  } else if (sub === 'CCI') {
+      const cci = calculateCCI(14, data);
+      newLines.push({ name: 'CCI', data: cci, color: '#00BCD4', pane: 'sub' });
+  } else if (sub === 'BIAS') {
+      const bias6 = calculateBIAS(6, data);
+      const bias12 = calculateBIAS(12, data);
+      const bias24 = calculateBIAS(24, data);
+      newLines.push(
+          { name: 'BIAS6', data: bias6, color: '#E91E63', pane: 'sub' },
+          { name: 'BIAS12', data: bias12, color: '#2196F3', pane: 'sub' },
+          { name: 'BIAS24', data: bias24, color: '#FF9800', pane: 'sub' }
+      );
+  } else if (sub === 'OBV') {
+      const obv = calculateOBV(data);
+      newLines.push({ name: 'OBV', data: obv, color: '#FFC107', pane: 'sub' });
+  }
+
+  lines.value = newLines;
+};
+
+const fetchData = async () => {
+  // Try to use searchQuery if currentStock is null or doesn't match
+  let targetCode = currentStock.value?.code;
+  
+  if (searchQuery.value && (!currentStock.value || currentStock.value.code !== searchQuery.value)) {
+      // Simple validation: 6 digits
+      if (/^\d{6}$/.test(searchQuery.value)) {
+          targetCode = searchQuery.value;
+          currentStock.value = { code: targetCode, name: targetCode }; // Temporary name
+      }
+  }
+
+  if (!targetCode) return;
+  
+  loading.value = true;
+  try {
+    const rawData = await dataAPI.getKlineData(
+      targetCode, 
+      dateRange.value?.[0], 
+      dateRange.value?.[1]
+    );
+    
+    klineData.value = rawData.map(item => ({
+      time: item.date,
+      open: item.open,
+      high: item.high,
+      low: item.low,
+      close: item.close,
+      volume: item.volume
+    }));
+    
+    updateLines();
+
+  } catch (e) {
+    console.error(e);
+    ElMessage.error('获取数据失败，请检查股票代码是否正确');
+  } finally {
+    loading.value = false;
+  }
+};
+
+// --- Watchlist Logic ---
+const loadFavorites = async () => {
+    try {
+        const res = await watchlistAPI.getWatchlist();
+        favorites.value = res;
+    } catch (e) {
+        console.error('加载收藏列表失败', e);
+    }
+};
+
+const toggleFavorite = async () => {
+    if (!currentStock.value) return;
+    try {
+        if (isFavorite.value) {
+            await watchlistAPI.removeFromWatchlist(currentStock.value.code);
+            ElMessage.success('已取消收藏');
+        } else {
+            await watchlistAPI.addToWatchlist(currentStock.value.code);
+            ElMessage.success('已收藏');
+        }
+        loadFavorites(); // Reload to update state
+    } catch (e: any) {
+        ElMessage.error(e.response?.data?.detail || '操作失败');
+    }
+};
+
+const handleFavoriteSelect = (fav: WatchlistItem) => {
+    searchQuery.value = fav.stock_code;
+    currentStock.value = { code: fav.stock_code, name: fav.stock_name || fav.stock_code }; 
+    fetchData();
+};
+
+watch(() => [activeMainIndicator.value, selectedSubIndicator.value], () => {
+    updateLines();
+});
+
+watch(() => maConfig, () => {
+    if (activeMainIndicator.value === 'MA') {
+        updateLines();
+    }
+}, { deep: true });
+
+// Listen to popover button clicks to set active mode
+watch(activeMainIndicator, () => {
+    updateLines();
+});
+
+onMounted(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 6);
+    dateRange.value = [
+        start.toISOString().split('T')[0],
+        end.toISOString().split('T')[0]
+    ];
+    
+    loadFavorites();
+
+    const { stock, name } = route.query;
+    if (stock) {
+        currentStock.value = { code: stock as string, name: name as string || 'Unknown' };
+        searchQuery.value = stock as string;
+        fetchData();
+    }
+});
 </script>
 
-<style scoped>
-.chart-view {
-  padding: 0;
+<style lang="scss" scoped>
+@use '@/styles/variables' as v;
+
+.chart-view-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: v.$bg-primary;
+  color: v.$text-primary;
 }
 
-.card-header {
+.control-panel {
+  padding: 12px 24px;
+  background-color: v.$bg-secondary;
+  border-bottom: 1px solid v.$border-color;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+
+  .search-section {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    
+    .stock-search {
+      width: 240px;
+    }
+    
+    .date-picker {
+      width: 300px;
+    }
+  }
+
+  .indicator-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-left: 20px;
+    border-left: 1px solid v.$border-color;
+    
+    .group-label {
+      font-size: 13px;
+      color: v.$text-secondary;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    
+    .indicator-controls {
+      display: flex;
+      gap: 8px;
+    }
+  }
+  
+  .action-section {
+      margin-left: auto;
+      margin-right: 20px;
+  }
+}
+
+.checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-icon {
+  margin-left: 8px;
+  color: v.$text-secondary;
+  cursor: pointer;
+  font-size: 16px;
+  
+  &:hover {
+    color: var(--el-color-primary);
+  }
+}
+
+.indicator-help {
+  font-size: 13px;
+  line-height: 1.6;
+  
+  .title {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    margin-bottom: 4px;
+  }
+  
+  .desc {
+    color: var(--el-text-color-regular);
+  }
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  
+  .chart-wrapper {
+    flex: 1;
+    position: relative;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    
+    .empty-state {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  .stats-panel {
+    width: 280px;
+    background-color: v.$bg-secondary;
+    border-left: 1px solid v.$border-color;
+    overflow-y: auto;
+    padding: 20px;
+
+    .panel-header {
+      margin-bottom: 20px;
+      h3 { margin: 0 0 5px 0; font-size: 16px; font-weight: 600; }
+      .period { font-size: 12px; color: v.$text-secondary; }
+    }
+
+    .stat-card {
+      margin-bottom: 24px;
+      h4 {
+        font-size: 13px;
+        color: v.$text-secondary;
+        margin-bottom: 12px;
+        border-bottom: 1px solid v.$border-color;
+        padding-bottom: 8px;
+        font-weight: 600;
+      }
+      .stat-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .stat-item {
+        display: flex;
+        flex-direction: column;
+        .label { font-size: 12px; color: v.$text-secondary; margin-bottom: 4px; }
+        .value {
+          font-size: 15px;
+          font-weight: 600;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+      }
+    }
+  }
+}
+
+.stock-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  font-weight: 500;
-  font-size: 16px;
+  .code { font-weight: bold; }
+  .name { color: #888; font-size: 0.9em; }
 }
 
-.chart-container {
-  width: 100%;
-  min-height: 900px;
-  background-color: #f5f5f5;
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-.chart-iframe {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  height: 900px;
-  border: none;
-  overflow: hidden;
-}
-
-.parameter-description {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 5px;
-  line-height: 1.5;
-}
+.text-up { color: #f56c6c; }
+.text-down { color: #67c23a; }
 </style>

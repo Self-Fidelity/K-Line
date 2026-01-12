@@ -150,3 +150,8 @@ data/images/*.html
 data/images/*.png
 data/strategy_results/**/*.csv
 logs/*.log
+
+# 临时文件和脚本
+temp_*.py
+备忘
+.备忘

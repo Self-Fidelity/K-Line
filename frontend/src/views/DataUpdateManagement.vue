@@ -77,7 +77,7 @@
             <el-icon><Clock /></el-icon>
             <span>定时任务状态</span>
             <el-button
-              type="text"
+              link
               size="small"
               @click="refreshSchedulerStatus"
               style="margin-left: 10px"

@@ -1,0 +1,41 @@
+// CSS Variables Definition
+:root {
+  // Light Mode Defaults (To be defined properly if we want full light mode support)
+  --bg-primary: #f5f7fa;
+  --bg-secondary: #ffffff;
+  --bg-lighter: #e4e7ed;
+  --text-primary: #303133;
+  --text-secondary: #909399;
+  --border-color: #dcdfe6;
+  
+  --color-up: #ff4d4f;
+  --color-down: #26a69a;
+}
+
+// Dark Mode Overrides
+html.dark {
+  --bg-primary: #121212;
+  --bg-secondary: #1e1e1e;
+  --bg-lighter: #2d2d2d;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --border-color: #333333;
+  
+  --color-up: #ff4d4f;
+  --color-down: #26a69a;
+}
+
+// Sass Variables mapping to CSS Variables (for usage in scss)
+$bg-primary: var(--bg-primary);
+$bg-secondary: var(--bg-secondary);
+$bg-lighter: var(--bg-lighter);
+$text-primary: var(--text-primary);
+$text-secondary: var(--text-secondary);
+$border-color: var(--border-color);
+
+$color-up: var(--color-up);
+$color-down: var(--color-down);
+
+// Legacy/Hardcoded for specific needs
+$sidebar-width: 240px;
+$header-height: 60px;

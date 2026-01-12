@@ -24,16 +24,63 @@ export interface StrategyAnalyzeRequest {
   params?: Record<string, any>
 }
 
-export interface StrategyAnalyzeResult {
-  result: any[]
-  statistics: Record<string, any>
+export interface TradeRecord {
+  date: string
+  type: 'buy' | 'sell'
+  price: number
+  action?: string
+  buy_price?: number
+  buy_date?: string
+  profit?: number
+  profit_rate?: number
 }
 
+export interface StrategyStatistics {
+  initial_capital: number
+  final_equity: number
+  cumulative_return: number
+  annual_return: number
+  max_drawdown: number
+  sharpe_ratio: number
+  sortino_ratio: number
+  win_rate: number
+  pl_ratio: number
+  total_trades: number
+  
+  benchmark_return: number
+  benchmark_max_drawdown: number
+  
+  // 曲线数据
+  equity_curve: number[]
+  benchmark_curve: number[]
+  dates: string[]
+  close_prices: number[]
+  trades: TradeRecord[]
+  daily_returns: number[]
+}
+
+export interface StrategyAnalyzeResult {
+  strategy_name: string
+  stock_code: string
+  start_date?: string
+  end_date?: string
+  result: any[]
+  statistics: StrategyStatistics
+}
+
+// StrategyAnalyzeResponse 实际上就是 StrategyAnalyzeResult (根据后端接口定义调整)
+// 后端 StrategyAnalyzeResponse 包含 result: List[Dict] 和 statistics: StrategyStatisticsModel
+// 这里的结构需要匹配后端返回
 export interface StrategyAnalyzeResponse {
   strategy_name: string
   stock_code: string
-  result: StrategyAnalyzeResult
+  stock_name?: string
+  start_date?: string
+  end_date?: string
+  result: any[]
+  statistics: StrategyStatistics
 }
+
 
 export interface StrategyCompareRequest {
   strategy_names: string[]
@@ -47,7 +94,7 @@ export interface StrategyCompareResponse {
   stock_code: string
   start_date?: string
   end_date?: string
-  results: StrategyAnalyzeResponse[]
+  results: any[] // 实际上是包含多个 analyze response
 }
 
 export const strategyAPI = {
@@ -66,7 +113,10 @@ export const strategyAPI = {
       '/api/strategy/analyze',
       {
         strategy_name: strategyName,
-        ...request,
+        stock_code: request.stock_code,
+        start_date: request.start_date,
+        end_date: request.end_date,
+        strategy_params: request.params
       }
     )
     return response.data

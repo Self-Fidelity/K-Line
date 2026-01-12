@@ -27,6 +27,18 @@ class DataService:
         self.fetcher = StockDataFetcher()
         self.stock_list_manager = StockListManager()
     
+    def get_stock_name(self, stock_code: str) -> Optional[str]:
+        """获取股票名称"""
+        try:
+            df = self.stock_list_manager.get_stock_list(market='all')
+            row = df[df['code'] == stock_code]
+            if not row.empty:
+                return row.iloc[0]['name']
+            return None
+        except Exception as e:
+            logger.error(f"获取股票名称失败: {e}")
+            return None
+
     def get_stock_list(
         self, 
         market: str = "main", 
@@ -75,12 +87,18 @@ class DataService:
         
         Args:
             stock_code: 股票代码
-            start_date: 开始日期（格式：'20240101'）
-            end_date: 结束日期（格式：'20240101'）
+            start_date: 开始日期（格式：'20240101' 或 '2024-01-01'）
+            end_date: 结束日期（格式：'20240101' 或 '2024-01-01'）
         
         Returns:
             日K线数据 DataFrame
         """
+        # 移除日期中的连字符，以匹配数据库中的存储格式 YYYYMMDD
+        if start_date:
+            start_date = start_date.replace("-", "")
+        if end_date:
+            end_date = end_date.replace("-", "")
+
         return self.storage.get_daily_data(
             stock_code=stock_code,
             start_date=start_date,

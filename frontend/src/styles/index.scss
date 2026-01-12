@@ -1,0 +1,81 @@
+@use "variables" as v;
+
+// Global Reset & Base Styles
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background-color: v.$bg-primary;
+  color: v.$text-primary;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+#app {
+  height: 100%;
+}
+
+// Scrollbar styling
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: v.$bg-primary; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: v.$bg-lighter; 
+  border-radius: 4px;
+  
+  &:hover {
+    // Note: color.adjust doesn't work well with CSS variables, using opacity/filter approach or just simple hover
+    background: v.$text-secondary;
+  }
+}
+
+// Element Plus Overrides
+.el-container {
+  height: 100%;
+}
+
+.el-aside {
+  background-color: v.$bg-secondary;
+  border-right: 1px solid v.$border-color;
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.el-header {
+  background-color: v.$bg-secondary;
+  border-bottom: 1px solid v.$border-color;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.el-main {
+  background-color: v.$bg-primary;
+  padding: 20px;
+  transition: background-color 0.3s;
+}
+
+.el-card {
+  background-color: v.$bg-secondary;
+  border: 1px solid v.$border-color;
+  color: v.$text-primary;
+  transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+  
+  &__header {
+    border-bottom: 1px solid v.$border-color;
+  }
+}
+
+// Text Utilities
+.text-up { color: v.$color-up; }
+.text-down { color: v.$color-down; }
+.text-muted { color: v.$text-secondary; }

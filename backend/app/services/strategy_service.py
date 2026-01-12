@@ -271,6 +271,32 @@ class StrategyService:
         if result.empty:
             raise ValueError("策略分析结果为空")
         
+        # 确保结果包含 OHLCV 列，如果缺失则从原始数据合并
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        # 检查缺失的列，注意：close 通常被策略保留，但也可能被修改，这里假设如果策略返回了就不覆盖
+        # 但为了 K 线图准确，最好确保这些列存在且完整
+        
+        # 统一日期格式为 datetime 以便合并
+        result['date'] = pd.to_datetime(result['date'])
+        data_copy = data.copy()
+        data_copy['date'] = pd.to_datetime(data_copy['date'])
+        
+        # 找出结果中确实缺失的必要列
+        missing_columns = [col for col in required_columns if col not in result.columns]
+        
+        if missing_columns:
+            # 只合并缺失的列
+            cols_to_merge = ['date'] + missing_columns
+            # 使用左连接保留策略结果的行（策略可能过滤了某些行）
+            result = pd.merge(result, data_copy[cols_to_merge], on='date', how='left')
+            
+        # 如果策略修改了 close 等列导致与原始数据不一致（例如归一化了），
+        # 而前端绘图需要原始价格，这里可能需要一种机制来区分。
+        # 目前假设策略返回的 close 是正确的（可能是修正后的价格），但如果 open/high/low 缺失，
+        # 补全它们时可能会出现与策略返回的 close 不匹配（例如 close 是复权价，而补全的是不复权）。
+        # 鉴于 data_service.get_kline_data 返回的通常是一致的数据，
+        # 如果策略没有修改价格只是筛选了列，那么合并是安全的。
+        
         # 计算统计信息
         stats = self.statistics.calculate_statistics(
             data=data,
@@ -287,9 +313,13 @@ class StrategyService:
                 elif isinstance(record["date"], str) and "T" in record["date"]:
                     record["date"] = record["date"].split("T")[0]
         
+        # 获取股票名称
+        stock_name = data_service.get_stock_name(stock_code)
+
         return {
             "strategy_name": strategy_name,
             "stock_code": stock_code,
+            "stock_name": stock_name,
             "start_date": start_date,
             "end_date": end_date,
             "result": result_records,

@@ -1,61 +1,49 @@
 /**
- * 自定义策略API
+ * 自定义策略 API
  */
-
 import apiClient from './client'
-import type { AxiosResponse } from 'axios'
 
-// 自定义策略信息
 export interface CustomStrategyInfo {
   id: number
   user_id: number
   name: string
   description: string
-  detailed_description: string
-  parameter_descriptions: Record<string, string>
+  detailed_description?: string
+  parameter_descriptions?: Record<string, string>
   is_public: boolean
   is_system: boolean
   created_at: string
-  updated_at: string | null
+  updated_at?: string | null
 }
 
-// 自定义策略详情（包含代码）
 export interface CustomStrategyDetail extends CustomStrategyInfo {
   code: string
 }
 
-// 创建策略请求
 export interface CustomStrategyCreate {
   name: string
   description: string
-  detailed_description: string
+  detailed_description?: string
   code: string
-  parameter_descriptions: Record<string, string>
+  parameter_descriptions?: Record<string, string>
+  is_public?: boolean
 }
 
-// 更新策略请求
 export interface CustomStrategyUpdate {
   name?: string
   description?: string
   detailed_description?: string
   code?: string
   parameter_descriptions?: Record<string, string>
+  is_public?: boolean
 }
 
-// 策略列表响应
-export interface CustomStrategyListResponse {
-  strategies: CustomStrategyInfo[]
-  total: number
-}
-
-// 策略验证请求
-export interface CustomStrategyValidateRequest {
+export interface ValidateRequest {
   code: string
   test_data?: boolean
 }
 
-// 策略验证响应
-export interface CustomStrategyValidateResponse {
+export interface ValidateResponse {
   valid: boolean
   errors: string[]
   warnings: string[]
@@ -63,34 +51,40 @@ export interface CustomStrategyValidateResponse {
   strategy_description?: string
 }
 
+export interface CustomStrategyListResponse {
+  strategies: CustomStrategyInfo[]
+  total: number
+}
+
+// 注意：后端路径前缀为 /api/custom-strategy (连字符)，且遵循RESTful规范
 export const customStrategyAPI = {
   // 获取策略列表
-  getList(): Promise<AxiosResponse<CustomStrategyListResponse>> {
-    return apiClient.get('/api/custom-strategy')
+  getList: async () => {
+    return apiClient.get<CustomStrategyListResponse>('/api/custom-strategy')
   },
 
   // 获取策略详情
-  getDetail(strategyId: number): Promise<AxiosResponse<CustomStrategyDetail>> {
-    return apiClient.get(`/api/custom-strategy/${strategyId}`)
+  getDetail: async (id: number) => {
+    return apiClient.get<CustomStrategyDetail>(`/api/custom-strategy/${id}`)
   },
 
   // 创建策略
-  create(data: CustomStrategyCreate): Promise<AxiosResponse<CustomStrategyInfo>> {
-    return apiClient.post('/api/custom-strategy', data)
+  create: async (data: CustomStrategyCreate) => {
+    return apiClient.post<CustomStrategyInfo>('/api/custom-strategy', data)
   },
 
   // 更新策略
-  update(strategyId: number, data: CustomStrategyUpdate): Promise<AxiosResponse<CustomStrategyInfo>> {
-    return apiClient.put(`/api/custom-strategy/${strategyId}`, data)
+  update: async (id: number, data: CustomStrategyUpdate) => {
+    return apiClient.put<CustomStrategyInfo>(`/api/custom-strategy/${id}`, data)
   },
 
   // 删除策略
-  delete(strategyId: number): Promise<AxiosResponse<void>> {
-    return apiClient.delete(`/api/custom-strategy/${strategyId}`)
+  delete: async (id: number) => {
+    return apiClient.delete(`/api/custom-strategy/${id}`)
   },
 
   // 验证策略代码
-  validate(data: CustomStrategyValidateRequest): Promise<AxiosResponse<CustomStrategyValidateResponse>> {
-    return apiClient.post('/api/custom-strategy/validate', data)
-  },
+  validate: async (data: ValidateRequest) => {
+    return apiClient.post<ValidateResponse>('/api/custom-strategy/validate', data)
+  }
 }

@@ -37,14 +37,51 @@ class StrategyCompareRequest(BaseModel):
     strategy_params: Dict[str, Dict[str, Any]] = {}  # key为策略名称，value为该策略的参数
 
 
+class TradeRecord(BaseModel):
+    """交易记录模型"""
+    date: str
+    type: str  # buy, sell
+    price: float
+    action: Optional[str] = None
+    buy_price: Optional[float] = None
+    buy_date: Optional[str] = None
+    profit: Optional[float] = None
+    profit_rate: Optional[float] = None
+
+
+class StrategyStatisticsModel(BaseModel):
+    """策略统计指标模型"""
+    initial_capital: float
+    final_equity: float
+    cumulative_return: float
+    annual_return: float
+    max_drawdown: float
+    sharpe_ratio: float
+    sortino_ratio: float
+    win_rate: float
+    pl_ratio: float
+    total_trades: int
+    benchmark_return: float
+    benchmark_max_drawdown: float
+    
+    # 详细数据系列
+    equity_curve: List[float] = []
+    benchmark_curve: List[float] = []
+    dates: List[str] = []
+    close_prices: List[float] = []
+    trades: List[TradeRecord] = []
+    daily_returns: List[float] = []
+
+
 class StrategyAnalyzeResponse(BaseModel):
     """策略分析响应模型"""
     strategy_name: str
     stock_code: str
+    stock_name: Optional[str] = None
     start_date: Optional[str]
     end_date: Optional[str]
     result: List[Dict]
-    statistics: Dict
+    statistics: StrategyStatisticsModel  # 使用具体的模型而不是 Dict
 
 
 class StrategyCompareResponse(BaseModel):

@@ -1,20 +1,63 @@
 <template>
-  <div class="chart-container" ref="chartContainer"></div>
+  <div class="kline-chart-wrapper" :style="{ height: autosize ? '100%' : height + 'px' }">
+    <!-- Main Chart -->
+    <div class="chart-container main-chart" ref="mainChartContainer" :style="{ flex: showSubChart ? 2 : 1, borderBottom: showSubChart ? '' : 'none' }">
+      <div class="chart-legend" :class="{ 'dark-mode': darkMode }">
+        <div class="legend-row symbol-info" v-if="currentOHLC">
+          <span class="symbol-name">{{ watermark || 'Unknown' }}</span>
+          <div class="ohlc-values" v-if="!simpleLegend">
+            <span class="item">O: <span :class="getColor(currentOHLC.open, currentOHLC.prevClose)">{{ formatPrice(currentOHLC.open) }}</span></span>
+            <span class="item">H: <span :class="getColor(currentOHLC.high, currentOHLC.prevClose)">{{ formatPrice(currentOHLC.high) }}</span></span>
+            <span class="item">L: <span :class="getColor(currentOHLC.low, currentOHLC.prevClose)">{{ formatPrice(currentOHLC.low) }}</span></span>
+            <span class="item">C: <span :class="getColor(currentOHLC.close, currentOHLC.prevClose)">{{ formatPrice(currentOHLC.close) }}</span></span>
+            <span class="item change" :class="getColor(currentOHLC.close, currentOHLC.prevClose)">
+              {{ formatChange(currentOHLC.close, currentOHLC.prevClose) }}
+            </span>
+          </div>
+          <div class="ohlc-values" v-else>
+            <span class="item change" :class="getColor(currentOHLC.close, currentOHLC.prevClose)">
+              {{ formatChange(currentOHLC.close, currentOHLC.prevClose) }}
+            </span>
+          </div>
+        </div>
+        <div class="legend-row indicators" v-if="!simpleLegend">
+          <div v-for="ind in currentMainIndicators" :key="ind.name" class="indicator-item" :style="{ color: ind.color }">
+            <span class="name">{{ ind.name }}:</span>
+            <span class="value">{{ formatPrice(ind.value) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sub Chart -->
+    <div v-if="showSubChart" class="chart-container sub-chart" ref="subChartContainer">
+      <div class="chart-legend" :class="{ 'dark-mode': darkMode }">
+        <div class="legend-row indicators">
+          <div v-for="ind in currentSubIndicators" :key="ind.name" class="indicator-item" :style="{ color: ind.color }">
+            <span class="name">{{ ind.name }}:</span>
+            <span class="value">{{ formatPrice(ind.value) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, defineProps, withDefaults, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { 
   createChart, 
   ColorType, 
   CrosshairMode,
   CandlestickSeries,
   HistogramSeries,
-  LineSeries
+  LineSeries,
+  createSeriesMarkers,
+  type LineWidth
 } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, MouseEventParams, ISeriesMarkersPluginApi } from 'lightweight-charts';
 
-// 定义数据接口
+// Data Interfaces
 export interface ChartData {
   time: string;
   open: number;
@@ -34,10 +77,11 @@ export interface Marker {
 
 export interface LineData {
   name: string;
-  data: { time: string; value: number }[];
+  data: { time: string; value: number; color?: string }[];
   color: string;
   lineWidth?: number;
-  priceScaleId?: string; // 'right', 'left', or custom
+  pane?: 'main' | 'sub'; // 'main' or 'sub'
+  style?: 'line' | 'histogram';
 }
 
 const props = withDefaults(defineProps<{
@@ -47,467 +91,476 @@ const props = withDefaults(defineProps<{
   height?: number;
   watermark?: string;
   darkMode?: boolean;
+  autosize?: boolean;
+  showSubChart?: boolean; // Prop to control sub-chart visibility
+  simpleLegend?: boolean; // Prop to simplify legend (hide OHLC and indicators)
 }>(), {
-  height: 500,
+  height: 600,
   markers: () => [],
   lines: () => [],
-  darkMode: false
+  darkMode: false,
+  autosize: false,
+  showSubChart: true,
+  simpleLegend: false
 });
 
-const chartContainer = ref<HTMLElement | null>(null);
-// 使用普通变量而非 ref 来存储 chart 实例，避免 Vue Proxy 干扰
-let chart: IChartApi | null = null;
-let candlestickSeries: ISeriesApi<"Candlestick"> | null = null;
-let volumeSeries: ISeriesApi<"Histogram"> | null = null;
-const lineSeriesMap = new Map<string, ISeriesApi<"Line">>();
+// Containers
+const mainChartContainer = ref<HTMLElement | null>(null);
+const subChartContainer = ref<HTMLElement | null>(null);
 
-// 初始化图表
-const initChart = async () => {
-  if (!chartContainer.value) return;
-  
-  // 销毁旧图表
-  if (chart) {
-    try {
-        chart.remove();
-    } catch (e) {
-        console.warn('Error removing chart:', e);
-    }
-    chart = null;
-    candlestickSeries = null;
-    volumeSeries = null;
-    lineSeriesMap.clear();
-  }
-  
-  // 等待DOM完全准备好
+// Chart Instances
+let mainChart: IChartApi | null = null;
+let subChart: IChartApi | null = null;
+
+// Series
+let candlestickSeries: ISeriesApi<"Candlestick"> | null = null;
+let markersPlugin: ISeriesMarkersPluginApi<any> | null = null;
+const mainSeriesMap = new Map<string, ISeriesApi<"Line" | "Histogram">>();
+const subSeriesMap = new Map<string, ISeriesApi<"Line" | "Histogram">>();
+
+// Observers
+let mainResizeObserver: ResizeObserver | null = null;
+let subResizeObserver: ResizeObserver | null = null;
+
+// Tooltip State
+const currentOHLC = ref<any>(null);
+const currentMainIndicators = ref<any[]>([]);
+const currentSubIndicators = ref<any[]>([]);
+
+// Helper to safely set markers (Removed as we use plugin now)
+// const safelySetMarkers = (series: ISeriesApi<"Candlestick"> | null, markers: Marker[]) => { ... }
+
+// Formatters
+const formatPrice = (val: number) => val !== undefined && val !== null ? Number(val.toFixed(2)) : '--';
+const formatChange = (curr: number, prev: number) => {
+  if (!curr || !prev) return '';
+  const chg = (curr - prev) / prev * 100;
+  return `${chg > 0 ? '+' : ''}${chg.toFixed(2)}%`;
+};
+const getColor = (curr: number, prev: number) => {
+  if (!curr || !prev) return '';
+  return curr >= prev ? 'text-up' : 'text-down';
+};
+
+// Colors
+// const chartColors = { ... }; // Removed unused
+
+// Sync Logic
+const syncCharts = (source: IChartApi, target: IChartApi) => {
+    source.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (range) {
+            target.timeScale().setVisibleLogicalRange(range);
+        }
+    });
+};
+
+const initCharts = async () => {
+    if (!mainChartContainer.value) return;
+    
+    // Cleanup
+    if (mainChart) { mainChart.remove(); mainChart = null; }
+    if (subChart) { subChart.remove(); subChart = null; }
+    mainSeriesMap.clear();
+    subSeriesMap.clear();
+
   await nextTick();
 
-  // 二次检查，确保在nextTick后元素仍然存在
-  if (!chartContainer.value) return;
+    // Debug log
+    console.log('Initializing KlineChart', {
+        width: mainChartContainer.value.clientWidth,
+        height: mainChartContainer.value.clientHeight,
+        dataLength: props.data.length,
+        linesLength: props.lines.length
+    });
 
-  const chartOptions = {
+    // Chart Config
+    const commonOptions = {
     layout: {
       background: { type: ColorType.Solid, color: props.darkMode ? '#1b1b1f' : '#ffffff' },
       textColor: props.darkMode ? '#d1d4dc' : '#333',
     },
     grid: {
-      vertLines: { color: props.darkMode ? '#404040' : '#f0f3fa' },
-      horzLines: { color: props.darkMode ? '#404040' : '#f0f3fa' },
+            vertLines: { color: props.darkMode ? '#2B2B43' : '#f0f3fa' },
+            horzLines: { color: props.darkMode ? '#2B2B43' : '#f0f3fa' },
     },
     crosshair: {
       mode: CrosshairMode.Normal,
+            vertLine: { width: 1 as LineWidth, color: props.darkMode ? '#555' : '#9B7DFF', style: 3 },
+            horzLine: { width: 1 as LineWidth, color: props.darkMode ? '#555' : '#9B7DFF', style: 3 },
     },
       rightPriceScale: {
-        borderColor: props.darkMode ? '#404040' : '#d1d4dc',
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
+            borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc',
+            scaleMargins: { top: 0.1, bottom: 0.1 },
         },
-        entireTextOnly: false,
-      },
-      leftPriceScale: {
-        visible: false,
-      },
+    };
+
+    // --- Main Chart ---
+    mainChart = createChart(mainChartContainer.value, {
+        ...commonOptions,
       timeScale: {
-        borderColor: props.darkMode ? '#404040' : '#d1d4dc',
+            borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc',
+            visible: true,
         timeVisible: true,
-        rightOffset: 12,
-        barSpacing: 3,
-        rightBarStaysOnScroll: true,
-        lockVisibleTimeRangeOnResize: false,
-      },
-    width: chartContainer.value.clientWidth,
-    height: props.height,
-  };
+        },
+        width: mainChartContainer.value.clientWidth,
+        height: mainChartContainer.value.clientHeight,
+    });
 
-  try {
-    // 创建图表实例
-    chart = createChart(chartContainer.value, chartOptions);
-    
-    // 调试：确保 chart 创建成功
-    if (!chart) {
-      console.error('Failed to create chart instance');
-      return;
-    }
-    
-    // 调试：检查 chart 对象的方法
-    const chartProto = Object.getPrototypeOf(chart);
-    const chartMethods = Object.getOwnPropertyNames(chartProto)
-      .filter(name => typeof (chart as any)[name] === 'function' && !name.startsWith('_'));
-    console.log('Chart available methods (first 30):', chartMethods.slice(0, 30));
-    
-    // 检查是否有 addCandlestickSeries 方法
-    if (!('addCandlestickSeries' in chart)) {
-      console.error('addCandlestickSeries method not found in chart instance');
-      console.error('Chart object keys:', Object.keys(chart));
-      console.error('Chart prototype keys:', Object.keys(chartProto));
-    }
+    // Subscribe to crosshair move on main chart to update legend
+    mainChart.subscribeCrosshairMove((param) => handleCrosshairMove(param, 'main'));
 
-  } catch (e) {
-    console.error('Error creating chart:', e);
-    return;
-  }
+    mainResizeObserver = new ResizeObserver(entries => {
+        if (!mainChart || entries.length === 0) return;
+        mainChart.applyOptions({ width: entries[0].contentRect.width, height: entries[0].contentRect.height });
+    });
+    mainResizeObserver.observe(mainChartContainer.value);
 
-  // 添加水印
-  if (props.watermark) {
-    chart.applyOptions({
-      watermark: {
-        color: props.darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+    candlestickSeries = mainChart.addSeries(CandlestickSeries, {
+        upColor: '#ef5350', downColor: '#26a69a',
+        borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a',
+    });
+    
+    // Initialize markers plugin
+    markersPlugin = createSeriesMarkers(candlestickSeries, []);
+    
+    // Debug series creation
+    console.log('Series created:', candlestickSeries);
+
+    // --- Sub Chart ---
+    if (props.showSubChart && subChartContainer.value) {
+        subChart = createChart(subChartContainer.value, {
+            ...commonOptions,
+      timeScale: {
+                borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc',
         visible: true,
-        text: props.watermark,
-        fontSize: 24,
-        horzAlign: 'center',
-        vertAlign: 'center',
-      },
-    });
-  }
-
-  try {
-    // 只有当有K线数据时才创建K线系列
-    if (props.data && props.data.length > 0 && chart) {
-      try {
-        // lightweight-charts v5 使用 addSeries(SeriesDefinition, options) API
-        candlestickSeries = chart.addSeries(CandlestickSeries, {
-          upColor: '#ef5350',
-          downColor: '#26a69a',
-          borderVisible: false,
-          wickUpColor: '#ef5350',
-          wickDownColor: '#26a69a',
-        }) as any;
-
-        // 创建成交量系列（覆盖在底部）
-        volumeSeries = chart.addSeries(HistogramSeries, {
-          color: '#26a69a',
-          priceFormat: {
-            type: 'volume',
-          },
-          priceScaleId: '', // Set as an overlay
-        }) as any;
-        
-        // 设置成交量位置
-        if (volumeSeries && volumeSeries.priceScale) {
-          volumeSeries.priceScale().applyOptions({
-            scaleMargins: {
-              top: 0.8, // Highest point of the series will be 80% away from the top
-              bottom: 0,
+        timeVisible: true,
             },
-          });
-        }
-      } catch (seriesError) {
-        console.error('Error creating series:', seriesError);
-        console.error('Chart object:', chart);
-        // 即使创建系列失败，也继续尝试显示线图
-      }
+            width: subChartContainer.value.clientWidth,
+            height: subChartContainer.value.clientHeight,
+        });
+
+        // Sync
+        syncCharts(mainChart, subChart);
+        syncCharts(subChart, mainChart);
+        
+        // subChart.subscribeCrosshairMove((param) => handleCrosshairMove(param, 'sub')); // This is handled by sync, but we might want legend update
+        // Actually, main chart crosshair move is enough if synced, but let's keep it consistent
+        subChart.subscribeCrosshairMove((param) => handleCrosshairMove(param, 'sub'));
+        
+        subResizeObserver = new ResizeObserver(entries => {
+            if (!subChart || entries.length === 0) return;
+            subChart.applyOptions({ width: entries[0].contentRect.width, height: entries[0].contentRect.height });
+        });
+        subResizeObserver.observe(subChartContainer.value);
+    } else {
+        // If no sub chart, we might want to ensure main chart resize observer is still active (it is)
     }
 
-    updateChartData();
-  } catch (e) {
-    console.error('Error adding series to chart:', e);
-    console.error('Error details:', e);
-    // 如果初始化失败，清理资源
-    if (chart) {
-      try {
-        chart.remove();
-      } catch (removeError) {
-        console.error('Error removing chart:', removeError);
-      }
-      chart = null;
-    }
-  }
+    updateData(true);
 };
 
-// 更新数据
-const updateChartData = () => {
-  if (!chart) {
-    console.warn('Chart not initialized, cannot update data');
-    return;
-  }
-
-  try {
-    console.log('Updating chart data:', {
-      dataLength: props.data?.length || 0,
-      linesLength: props.lines?.length || 0,
-      markersLength: props.markers?.length || 0,
-      hasCandlestick: !!candlestickSeries,
-      hasVolume: !!volumeSeries
-    });
-
-    // 1. 设置K线数据（如果有数据且需要显示K线）
-    if (props.data && props.data.length > 0) {
-      // 只有当有 candlestickSeries 时才设置K线数据
-      if (candlestickSeries && volumeSeries) {
-        // 格式化时间：确保是 YYYY-MM-DD 格式
-        const formatTime = (time: string): string => {
-          if (!time) return ''
-          // 如果已经是 YYYY-MM-DD 格式，直接返回
-          if (/^\d{4}-\d{2}-\d{2}$/.test(time)) {
-            return time
-          }
-          // 尝试解析其他格式
-          const date = new Date(time)
-          if (isNaN(date.getTime())) {
-            console.warn('Invalid time format:', time)
-            return ''
-          }
-          const year = date.getFullYear()
-          const month = String(date.getMonth() + 1).padStart(2, '0')
-          const day = String(date.getDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
-        }
-
-        // 验证和格式化K线数据
-        const formatCandlestickData = (d: any) => {
-          const time = formatTime(d.time)
-          if (!time) return null
-          
-          const open = Number(d.open)
-          const high = Number(d.high)
-          const low = Number(d.low)
-          const close = Number(d.close)
-          
-          // 验证数据有效性
-          if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) {
-            console.warn('Invalid OHLC data:', d)
-            return null
-          }
-          
-          // 确保 high >= max(open, close) 且 low <= min(open, close)
-          const maxPrice = Math.max(open, close)
-          const minPrice = Math.min(open, close)
-          
-          return {
-            time: time,
-            open: open,
-            high: Math.max(high, maxPrice), // 确保 high 不小于 open 和 close 的最大值
-            low: Math.min(low, minPrice),   // 确保 low 不大于 open 和 close 的最小值
-            close: close,
-          }
-        }
-
-        // Ensure data is sorted by time and unique
-        const sortedData = [...props.data]
-          .map(formatCandlestickData)
-          .filter((d): d is NonNullable<typeof d> => d !== null)
-          .sort((a, b) => {
-            const timeA = new Date(a.time).getTime()
-            const timeB = new Date(b.time).getTime()
-            return timeA - timeB
-          });
-          
-        // Remove duplicates based on time
-        const uniqueData = sortedData.filter((item, index, self) =>
-          index === self.findIndex((t) => (t.time === item.time))
-        );
-        
-        console.log('Formatted K-line data sample:', uniqueData.slice(0, 5))
-        console.log('Total K-line data points:', uniqueData.length)
-        
-        if (uniqueData.length === 0) {
-          console.warn('No valid K-line data after formatting')
-          return
-        }
+const handleCrosshairMove = (param: MouseEventParams, type: 'main' | 'sub') => {
+    const time = param.time;
     
-        candlestickSeries.setData(uniqueData);
-
-        // 2. 设置成交量数据
-        const volumeData = uniqueData.map(d => {
-          const volume = Number(d.volume) || 0
-          const originalData = props.data.find(item => formatTime(item.time) === d.time)
-          const isUp = d.close >= d.open
-          
-          return {
-            time: d.time,
-            value: volume,
-            color: isUp ? 'rgba(239, 83, 80, 0.5)' : 'rgba(38, 166, 154, 0.5)',
-          }
-        }).filter(d => d.value > 0) // 只显示有成交量的数据
-        
-        volumeSeries.setData(volumeData);
-
-        // 3. 设置标记
-        // 确保标记时间在数据范围内
-        const dataTimes = new Set(uniqueData.map(d => d.time))
-        const validMarkers = props.markers
-          .map(m => ({
-            ...m,
-            time: formatTime(m.time)
-          }))
-          .filter(m => m.time && dataTimes.has(m.time))
-        
-        if (validMarkers.length > 0) {
-          candlestickSeries.setMarkers(validMarkers.map(m => ({
-            time: m.time,
-            position: m.position as any,
-            color: m.color,
-            shape: m.shape as any,
-            text: m.text,
-          })))
+    // Check if mouse is out of chart
+    if (!time || param.point === undefined || param.point.x < 0 || param.point.x > (mainChartContainer.value?.clientWidth || 0) || param.point.y < 0 || param.point.y > (mainChartContainer.value?.clientHeight || 0)) {
+        // Reset to last if valid
+        if (props.data.length > 0) {
+            const last = props.data[props.data.length - 1];
+            const prev = props.data.length > 1 ? props.data[props.data.length - 2] : last;
+            // Always update main legend regardless of source type
+            currentOHLC.value = { ...last, prevClose: prev.close };
+            
+            // Reset indicators
+            updateIndicatorLegend(props.lines.filter(l => l.pane !== 'sub'), props.data.length - 1, currentMainIndicators);
+            if (props.showSubChart) {
+                updateIndicatorLegend(props.lines.filter(l => l.pane === 'sub'), props.data.length - 1, currentSubIndicators);
+            }
         }
-      }
+        return;
+    }
+    
+    // Find logical index? Or match time.
+    // param.time is the string time we pushed.
+    // However, lightweight-charts might convert it to BusinessDay object if it detects date pattern.
+    // We need to handle both string and object.
+    
+    let timeStr = time as string;
+    if (typeof time === 'object') {
+        // BusinessDay: { year, month, day }
+        const d = time as { year: number, month: number, day: number };
+        timeStr = `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
     }
 
-    // 4. 清除旧的线系列
-    lineSeriesMap.forEach(series => {
-      try {
-        chart?.removeSeries(series);
-      } catch (e) {
-        console.warn('Failed to remove series:', e);
-      }
-    });
-    lineSeriesMap.clear();
-
-    // 5. 添加新的线系列
-    if (props.lines && props.lines.length > 0) {
-      // 获取所有数据的时间集合（用于过滤线数据）
-      const allDataTimes = new Set<string>()
-      if (props.data && props.data.length > 0) {
-        props.data.forEach(d => {
-          if (d.time) allDataTimes.add(d.time)
-        })
-      }
-      // 如果只有线数据没有K线数据，则使用线数据的时间
-      if (allDataTimes.size === 0 && props.lines.length > 0) {
-        props.lines.forEach(line => {
-          line.data.forEach(d => {
-            if (d.time) allDataTimes.add(d.time)
-          })
-        })
-      }
-      
-      props.lines.forEach(line => {
-        if (!chart || !line.data || line.data.length === 0) {
-          console.warn('Skipping line series:', line.name, 'data length:', line.data?.length);
-          return;
+    const index = props.data.findIndex(d => d.time === timeStr);
+    if (index >= 0) {
+        // Update legends for both charts
+        const d = props.data[index];
+        const prev = index > 0 ? props.data[index - 1] : d;
+        currentOHLC.value = { ...d, prevClose: prev.close };
+        
+        updateIndicatorLegend(props.lines.filter(l => l.pane !== 'sub'), index, currentMainIndicators);
+        if (props.showSubChart) {
+            updateIndicatorLegend(props.lines.filter(l => l.pane === 'sub'), index, currentSubIndicators);
         }
-        
-        // lightweight-charts v5 使用 addSeries API
-        const lineSeries = chart.addSeries(LineSeries, {
-          color: line.color,
-          lineWidth: line.lineWidth || 2,
-          priceScaleId: line.priceScaleId || 'right',
-          title: line.name,
-        }) as any;
-        
-        // 格式化时间
-        const formatTime = (time: string): string => {
-          if (!time) return ''
-          if (/^\d{4}-\d{2}-\d{2}$/.test(time)) {
-            return time
-          }
-          const date = new Date(time)
-          if (isNaN(date.getTime())) return ''
-          const year = date.getFullYear()
-          const month = String(date.getMonth() + 1).padStart(2, '0')
-          const day = String(date.getDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
-        }
+    }
+};
 
-        // Ensure line data is also sorted and valid
-        const sortedLineData = [...line.data]
-           .map(d => ({
-             ...d,
-             time: formatTime(d.time)
-           }))
-           .filter(d => d.time && (allDataTimes.size === 0 || allDataTimes.has(d.time)))
-           .sort((a, b) => {
-             const timeA = new Date(a.time).getTime()
-             const timeB = new Date(b.time).getTime()
-             return timeA - timeB
-           });
-
-        const uniqueLineData = sortedLineData.filter((item, index, self) =>
-           index === self.findIndex((t) => (t.time === item.time))
-        ).map(d => {
-          const value = Number(d.value)
-          return {
-            time: d.time,
-            value: isNaN(value) ? 0 : value
-          }
-        }).filter(d => d.time && !isNaN(d.value)); // 移除 value > 0 的限制，允许负值
-        
-        console.log(`Line series "${line.name}": ${uniqueLineData.length} data points`);
-        
-        if (uniqueLineData.length > 0) {
-          lineSeries.setData(uniqueLineData);
-          lineSeriesMap.set(line.name, lineSeries);
+const updateIndicatorLegend = (lines: LineData[], index: number, targetRef: any) => {
+    const values = [];
+    for (const line of lines) {
+        const item = line.data[index]; // Assuming data aligns with main kline data (same length/time)
+        // If data is sparse, we need to find by time
+        // Optimization: Assume aligned for now or search
+        if (item && item.time === props.data[index].time) {
+             values.push({ name: line.name, value: item.value, color: line.color });
         } else {
-          console.warn(`Line series "${line.name}" has no valid data points`);
+             // Search fallback
+             const exact = line.data.find(d => d.time === props.data[index].time);
+             if (exact) values.push({ name: line.name, value: exact.value, color: line.color });
         }
-      });
     }
-    
-    // 适配内容并确保正确显示
-    if (chart) {
-      const timeScale = chart.timeScale()
-      timeScale.fitContent()
-      
-      // 如果数据更新，延迟一下再适配，确保数据已完全设置
-      if (props.data && props.data.length > 0) {
-        setTimeout(() => {
-          if (chart) {
-            timeScale.fitContent()
-          }
-        }, 100)
-      }
-    }
-    
-  } catch (e) {
-    console.error('Error updating chart data:', e);
-  }
+    targetRef.value = values;
 };
 
-// 监听数据变化
-watch(() => [props.data, props.markers, props.lines, props.darkMode], () => {
-  // 如果数据更新但 chart 未初始化，尝试初始化
-  if (!chart) {
-    initChart();
+const updateData = (fitContent = false) => {
+    // We only need mainChart to be present. 
+    // subChart is optional (depending on props.showSubChart)
+    if (!mainChart) return; 
+
+    // K-Line Data
+    if (props.data.length > 0) {
+        // Sort
+        const sorted = [...props.data].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        // Clean
+        const unique = sorted.filter((item, index, self) => index === self.findIndex((t) => (t.time === item.time)));
+        
+        candlestickSeries?.setData(unique.map(d => ({
+            time: d.time,
+            open: d.open, high: d.high, low: d.low, close: d.close
+        })));
+
+        // Set Markers
+        if (props.markers && props.markers.length > 0) {
+            // Ensure sorted by time
+            const sortedMarkers = [...props.markers].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            if (markersPlugin) {
+                 markersPlugin.setMarkers(sortedMarkers as any);
+            }
+        } else {
+            if (markersPlugin) {
+                 markersPlugin.setMarkers([]);
+            }
+        }
+
+        // Init Legend
+        const lastIndex = unique.length - 1;
+        const last = unique[lastIndex];
+        const prev = unique[lastIndex > 0 ? lastIndex - 1 : 0];
+        currentOHLC.value = { ...last, prevClose: prev.close };
+    }
+
+    // Lines
+    // const mainLines = props.lines.filter(l => l.pane !== 'main'); // Removed
+    // Actually pane logic: if pane is explicitly 'sub', go to sub. Else main.
+    // Correct logic:
+    const mainLinesData = props.lines.filter(l => l.pane !== 'sub');
+    const subLinesData = props.lines.filter(l => l.pane === 'sub');
+
+    // Helper to update series map
+    const updateSeriesMap = (chartInstance: IChartApi, lines: LineData[], map: Map<string, ISeriesApi<"Line" | "Histogram">>) => {
+        if (!chartInstance) return; // Guard if sub chart not created
+        
+        // Remove unused
+        const currentNames = new Set(lines.map(l => l.name));
+        for (const [name, series] of map) {
+            if (!currentNames.has(name)) {
+                chartInstance.removeSeries(series);
+                map.delete(name);
+            }
+        }
+
+        // Add/Update
+        lines.forEach(line => {
+            let series = map.get(line.name);
+            const options: any = {
+                color: line.color,
+                lineWidth: line.lineWidth || 1,
+                title: line.name,
+                priceScaleId: line.name === 'VOL' ? 'vol_scale' : 'right', // VOL logic
+            };
+            
+            // Special VOL handling in sub chart
+            if (line.name === 'VOL' && chartInstance === subChart) {
+                 // For VOL histogram
+                 // Usually standard right scale is fine if it's the only thing or combined properly
+            }
+
+            if (!series) {
+                if (line.style === 'histogram') {
+                    series = chartInstance.addSeries(HistogramSeries, options);
+                } else {
+                    series = chartInstance.addSeries(LineSeries, options);
+                }
+                map.set(line.name, series);
+            } else {
+                series.applyOptions(options);
+            }
+
+            // Data
+            const seriesData = line.data
+                .filter(d => d.time && !isNaN(d.value))
+                .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+                .map(d => ({ time: d.time, value: d.value, color: d.color }));
+            
+            // Debug log
+            if (seriesData.length === 0) {
+                console.warn(`Line ${line.name} has no valid data`);
+            }
+            
+            series.setData(seriesData as any);
+        });
+    };
+
+    updateSeriesMap(mainChart, mainLinesData, mainSeriesMap);
+    if (subChart) {
+        updateSeriesMap(subChart, subLinesData, subSeriesMap);
+    }
+
+    // Initial Legend for Indicators
+    if (props.data.length > 0) {
+        updateIndicatorLegend(mainLinesData, props.data.length - 1, currentMainIndicators);
+        updateIndicatorLegend(subLinesData, props.data.length - 1, currentSubIndicators);
+    }
+
+    if (fitContent) {
+        mainChart.timeScale().fitContent();
+        // Sub chart syncs automatically via logic range
+    }
+};
+
+watch(() => props.data, () => {
+    if (!mainChart) initCharts();
+    else updateData(true);
+}, { deep: true });
+
+watch(() => props.markers, () => {
+    if (markersPlugin && props.data.length > 0) {
+        if (props.markers && props.markers.length > 0) {
+            const sortedMarkers = [...props.markers].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            markersPlugin.setMarkers(sortedMarkers as any);
   } else {
-    // 如果暗黑模式改变，需要更新options
-    if (chart) {
-      chart.applyOptions({
-        layout: {
-          background: { type: ColorType.Solid, color: props.darkMode ? '#1b1b1f' : '#ffffff' },
-          textColor: props.darkMode ? '#d1d4dc' : '#333',
-        },
-        grid: {
-          vertLines: { color: props.darkMode ? '#404040' : '#f0f3fa' },
-          horzLines: { color: props.darkMode ? '#404040' : '#f0f3fa' },
-        },
-      });
+            markersPlugin.setMarkers([]);
+        }
     }
-    // 延迟更新数据，确保DOM已更新
-    nextTick(() => {
-      updateChartData();
-    });
-  }
-}, { deep: true, immediate: false });
+}, { deep: true });
 
-// 窗口大小调整
-const handleResize = () => {
-  if (chart && chartContainer.value) {
-    chart.applyOptions({ width: chartContainer.value.clientWidth });
-  }
-};
+watch(() => props.lines, () => {
+    if (mainChart) updateData(false); // No fit content
+}, { deep: true });
 
-onMounted(() => {
-  initChart();
-  window.addEventListener('resize', handleResize);
+watch(() => props.darkMode, () => {
+    if (!mainChart) return;
+    const theme = {
+        layout: { background: { color: props.darkMode ? '#1b1b1f' : '#ffffff' }, textColor: props.darkMode ? '#d1d4dc' : '#333' },
+        grid: { vertLines: { color: props.darkMode ? '#2B2B43' : '#f0f3fa' }, horzLines: { color: props.darkMode ? '#2B2B43' : '#f0f3fa' } },
+        rightPriceScale: { borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc' },
+        timeScale: { borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc' },
+    };
+    mainChart.applyOptions(theme as any);
+    if (subChart) {
+        subChart.applyOptions(theme as any);
+    }
 });
 
+onMounted(initCharts);
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize);
-  if (chart) {
-    chart.remove();
-    chart = null;
-    candlestickSeries = null;
-    volumeSeries = null;
-    lineSeriesMap.clear();
-  }
+    if (mainChart) { mainChart.remove(); mainChart = null; }
+    if (subChart) { subChart.remove(); subChart = null; }
+    if (mainResizeObserver) mainResizeObserver.disconnect();
+    if (subResizeObserver) subResizeObserver.disconnect();
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+.kline-chart-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
 .chart-container {
   width: 100%;
   position: relative;
+  
+  &.main-chart {
+    flex: 2; /* 2/3 height */
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+  }
+  
+  &.sub-chart {
+    flex: 1; /* 1/3 height */
+  }
 }
+
+.chart-legend {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 20;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 4px;
+  border-radius: 4px;
+  
+  &.dark-mode {
+    background: rgba(27, 27, 31, 0.8);
+    .symbol-name { color: #e0e0e0; }
+    .ohlc-values { color: #a0a0a0; }
+  }
+
+  .legend-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 2px;
+  }
+
+  .symbol-name {
+    font-weight: bold;
+    font-size: 13px;
+    color: #333;
+  }
+
+  .ohlc-values {
+    display: flex;
+    gap: 8px;
+    color: #666;
+    font-size: 11px;
+    
+    .item span {
+      font-weight: 500;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+  }
+
+  .indicators {
+    .indicator-item {
+      display: flex;
+      gap: 4px;
+      margin-right: 8px;
+      .name { opacity: 0.8; }
+      .value { 
+        font-weight: 500;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+    }
+  }
+}
+
+.text-up { color: #ef5350 !important; }
+.text-down { color: #26a69a !important; }
 </style>

@@ -65,12 +65,12 @@
                 {{ validationResult.valid ? '✓ 验证通过' : '✗ 验证失败' }}
               </span>
             </div>
-            <textarea
+            <CodeEditor
               v-model="formData.code"
-              class="code-editor"
+              :dark-mode="isDark"
+              height="500px"
               placeholder="请输入策略代码..."
-              spellcheck="false"
-            ></textarea>
+            />
             <div v-if="validationResult && !validationResult.valid" class="validation-errors">
               <div v-for="(error, index) in validationResult.errors" :key="index" class="error-item">
                 {{ error }}
@@ -110,9 +110,9 @@
         <!-- 筛选器 -->
         <div style="margin-bottom: 16px;">
           <el-radio-group v-model="strategyFilter" @change="handleFilterChange">
-            <el-radio-button label="all">全部策略</el-radio-button>
-            <el-radio-button label="system">系统策略</el-radio-button>
-            <el-radio-button label="custom">自定义策略</el-radio-button>
+            <el-radio-button value="all">全部策略</el-radio-button>
+            <el-radio-button value="system">系统策略</el-radio-button>
+            <el-radio-button value="custom">自定义策略</el-radio-button>
           </el-radio-group>
         </div>
 
@@ -164,7 +164,12 @@
 
         <el-divider>策略代码</el-divider>
         <div class="reference-code-wrapper">
-          <pre class="reference-code-viewer">{{ referenceStrategyCode }}</pre>
+          <CodeEditor
+            :model-value="referenceStrategyCode"
+            :dark-mode="isDark"
+            readonly
+            height="500px"
+          />
         </div>
       </div>
 
@@ -191,7 +196,12 @@
         </el-descriptions>
 
         <el-divider>策略代码</el-divider>
-        <pre class="code-viewer">{{ viewStrategy.code }}</pre>
+        <CodeEditor
+          :model-value="viewStrategy.code"
+          :dark-mode="isDark"
+          readonly
+          height="500px"
+        />
       </div>
     </el-dialog>
   </div>
@@ -200,9 +210,13 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useDark } from '@vueuse/core'
 import { customStrategyAPI, type CustomStrategyInfo, type CustomStrategyDetail, type CustomStrategyCreate, type CustomStrategyUpdate } from '@/api/customStrategy'
 import { strategyAPI, type StrategyInfo } from '@/api/strategy'
 import apiClient from '@/api/client'
+import CodeEditor from '@/components/CodeEditor.vue'
+
+const isDark = useDark()
 
 // 策略列表
 const strategyList = ref<CustomStrategyInfo[]>([])
@@ -624,7 +638,7 @@ onMounted(() => {
       width: 100%;
       min-height: 400px;
       padding: 12px;
-      font-family: 'Courier New', monospace;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       font-size: 14px;
       line-height: 1.6;
       border: none;
@@ -665,11 +679,12 @@ onMounted(() => {
     padding: 16px;
     border-radius: 4px;
     overflow-x: auto;
-    font-family: 'Courier New', monospace;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 13px;
     line-height: 1.6;
     max-height: 500px;
     overflow-y: auto;
+    color: #333;
   }
 
   .reference-code-wrapper {
@@ -682,7 +697,7 @@ onMounted(() => {
     background: #f5f7fa;
     padding: 16px;
     margin: 0;
-    font-family: 'Courier New', monospace;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 13px;
     line-height: 1.6;
     max-height: 500px;
@@ -690,6 +705,45 @@ onMounted(() => {
     overflow-y: auto;
     white-space: pre;
     tab-size: 2;
+    color: #333;
+  }
+}
+
+// Dark Mode Styles
+html.dark .custom-strategy {
+  .code-editor-wrapper {
+    border-color: #4c4d4f;
+
+    .editor-toolbar {
+      background: #2d2d2d;
+      border-bottom-color: #4c4d4f;
+    }
+
+    .code-editor {
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    
+    .validation-errors {
+      background: #2b1d1d;
+      border-top-color: #442b2b;
+    }
+    
+    .validation-warnings {
+      background: #2b251d;
+      border-top-color: #443b2b;
+    }
+  }
+
+  .code-viewer, 
+  .reference-code-viewer {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #4c4d4f;
+  }
+  
+  .reference-code-wrapper {
+    border-color: #4c4d4f;
   }
 }
 </style>

@@ -140,18 +140,32 @@ async def logout():
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user(
+async def get_current_active_user(
     current_user_id: Annotated[int, Depends(get_current_user_id)],
     db: Annotated[Connection, Depends(get_db)],
 ):
-    """获取当前用户信息"""
+    """获取当前活跃用户信息"""
     user = get_user_by_id(db, current_user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在",
         )
-    return UserResponse(**user)
+    if not user["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户已禁用",
+        )
+    # 将字典转换为 UserResponse 模型
+    return UserResponse(
+        id=user['id'],
+        username=user['username'],
+        email=user['email'],
+        role=user['role'],
+        max_watchlist_count=user['max_watchlist_count'],
+        is_active=bool(user['is_active']),
+        created_at=user['created_at']
+    )
 
 
 def get_current_admin_user(

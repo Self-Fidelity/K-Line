@@ -11,28 +11,71 @@
             filterable
             @change="handleStrategyChange"
           >
-            <el-option
-              v-for="strategy in strategies"
-              :key="strategy.name"
-              :label="strategy.name"
-              :value="strategy.name"
-            />
+            <el-option-group label="系统策略">
+              <el-option
+                v-for="strategy in systemStrategies"
+                :key="strategy.name"
+                :label="strategy.name"
+                :value="strategy.name"
+              />
+            </el-option-group>
+            <el-option-group label="自定义策略" v-if="customStrategies.length > 0">
+              <el-option
+                v-for="strategy in customStrategies"
+                :key="strategy.name"
+                :label="strategy.name"
+                :value="strategy.name"
+              />
+            </el-option-group>
           </el-select>
+          <el-tooltip v-if="currentStrategyInfo" :content="currentStrategyInfo.detailed_description || currentStrategyInfo.description" placement="top" :raw-content="true">
+            <template #content>
+              <div style="max-width: 300px; white-space: pre-wrap;">{{ currentStrategyInfo.detailed_description || currentStrategyInfo.description }}</div>
+            </template>
+            <el-icon style="margin-left: 5px; cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
+          </el-tooltip>
         </el-form-item>
 
         <el-form-item label="股票">
-          <el-autocomplete
-            v-model="analysisForm.stockCode"
-            :fetch-suggestions="searchStocks"
-            placeholder="代码/名称"
-            style="width: 180px"
-            @select="handleStockSelect"
-          >
-            <template #default="{ item }">
-              <span class="stock-code">{{ item.code }}</span>
-              <span class="stock-name">{{ item.name }}</span>
-            </template>
-          </el-autocomplete>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <el-dropdown trigger="click" @command="handleFavoriteSelect">
+              <el-button :icon="Collection" circle title="我的收藏" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
+                  <el-dropdown-item 
+                    v-for="fav in favorites" 
+                    :key="fav.id" 
+                    :command="fav"
+                  >
+                    {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+
+            <el-autocomplete
+              v-model="analysisForm.stockCode"
+              :fetch-suggestions="searchStocks"
+              placeholder="代码/名称"
+              style="width: 180px"
+              @select="handleStockSelect"
+            >
+              <template #default="{ item }">
+                <span class="stock-code">{{ item.code }}</span>
+                <span class="stock-name">{{ item.name }}</span>
+              </template>
+            </el-autocomplete>
+
+            <el-button 
+                :type="isFavorite ? 'warning' : 'default'" 
+                :icon="isFavorite ? StarFilled : Star" 
+                circle 
+                @click="toggleFavorite"
+                :disabled="!analysisForm.stockCode"
+                title="收藏当前股票"
+            />
+          </div>
         </el-form-item>
 
         <el-form-item label="时间">
@@ -78,7 +121,7 @@
             <div v-else-if="activeChartTab === 'kline' && klineData.length === 0" class="empty-chart">
               <el-empty description="暂无K线数据" />
             </div>
-            <div v-else-if="activeChartTab === 'equity' && equityChartData.length === 0" class="empty-chart">
+            <div v-else-if="activeChartTab === 'equity' && equityLines.length === 0" class="empty-chart">
               <el-empty description="暂无权益曲线数据" />
             </div>
             <KlineChart
@@ -89,6 +132,9 @@
               :lines="indicatorLines"
               :height="600"
               :watermark="watermarkText"
+              :darkMode="isDark"
+              :showSubChart="false" 
+              :simpleLegend="true"
             />
             <KlineChart
               v-if="activeChartTab === 'equity' && equityLines.length > 0"
@@ -97,6 +143,9 @@
               :lines="equityLines"
               :height="600"
               :watermark="watermarkText"
+              :darkMode="isDark"
+              :showSubChart="false" 
+              :simpleLegend="true"
             />
           </div>
         </el-card>
@@ -112,35 +161,109 @@
           
           <div class="stats-grid">
             <div class="stat-item">
-              <div class="label">累计收益</div>
+              <div class="label">
+                累计收益
+                <el-tooltip content="策略在回测区间内的总收益率" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
               <div class="value" :class="getColorClass(analysisResult.statistics.cumulative_return)">
                 {{ formatNumber(analysisResult.statistics.cumulative_return) }}%
               </div>
             </div>
             <div class="stat-item">
-              <div class="label">最大回撤</div>
+              <div class="label">
+                最大回撤
+                <el-tooltip content="策略净值从最高点回落的最大幅度，反映最大潜在亏损风险" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
               <div class="value down">
                 {{ formatNumber(analysisResult.statistics.max_drawdown) }}%
               </div>
             </div>
+             <div class="stat-item">
+              <div class="label">
+                年化收益
+                <el-tooltip content="将累计收益率换算成一年的平均收益率" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="value" :class="getColorClass(analysisResult.statistics.annual_return)">
+                {{ formatNumber(analysisResult.statistics.annual_return) }}%
+              </div>
+            </div>
             <div class="stat-item">
-              <div class="label">胜率</div>
+              <div class="label">
+                夏普比率
+                <el-tooltip content="衡量承担单位风险所获得的超额回报，数值越高越好 (>1 较好, >2 优秀)" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="value">
+                {{ formatNumber(analysisResult.statistics.sharpe_ratio) }}
+              </div>
+            </div>
+            <div class="stat-item">
+              <div class="label">
+                索提诺比率
+                <el-tooltip content="类似于夏普比率，但只考虑下行风险（亏损波动），更能反映真实的风险收益比" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="value">
+                {{ formatNumber(analysisResult.statistics.sortino_ratio) }}
+              </div>
+            </div>
+            <div class="stat-item">
+              <div class="label">
+                盈亏比
+                <el-tooltip content="平均盈利金额与平均亏损金额的比值，反映策略赚取的利润是否足以覆盖亏损" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="value">
+                {{ formatNumber(analysisResult.statistics.pl_ratio) }}
+              </div>
+            </div>
+            <div class="stat-item">
+              <div class="label">
+                胜率
+                <el-tooltip content="盈利交易次数占总交易次数的百分比" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
               <div class="value" :class="getColorClass(analysisResult.statistics.win_rate - 50)">
                 {{ formatNumber(analysisResult.statistics.win_rate) }}%
               </div>
             </div>
             <div class="stat-item">
-              <div class="label">交易次数</div>
+              <div class="label">
+                交易次数
+                <el-tooltip content="回测区间内产生的总买卖信号对次数" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
               <div class="value">{{ analysisResult.statistics.total_trades }}</div>
             </div>
              <div class="stat-item">
-              <div class="label">基准收益</div>
+              <div class="label">
+                基准收益
+                <el-tooltip content="同期持有标的股票（买入并持有）的收益率，用于对比策略表现" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
               <div class="value" :class="getColorClass(analysisResult.statistics.benchmark_return)">
                 {{ formatNumber(analysisResult.statistics.benchmark_return) }}%
               </div>
             </div>
              <div class="stat-item">
-              <div class="label">基准回撤</div>
+              <div class="label">
+                基准回撤
+                <el-tooltip content="同期持有标的股票的最大回撤" placement="top">
+                  <el-icon class="info-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
               <div class="value down">
                 {{ formatNumber(analysisResult.statistics.benchmark_max_drawdown) }}%
               </div>
@@ -153,8 +276,8 @@
           <template #header>
             <div class="card-title">
               <span>参数配置</span>
-              <el-tooltip :content="currentStrategyInfo.description" placement="top">
-                <el-icon><InfoFilled /></el-icon>
+              <el-tooltip content="配置策略的运行参数，不同的参数会影响策略的买卖点判断" placement="top">
+                <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
           </template>
@@ -163,8 +286,13 @@
             <el-form-item
               v-for="(val, key) in strategyParams"
               :key="key"
-              :label="getParameterLabel(key)"
             >
+              <template #label>
+                 <span>{{ getParameterLabel(key) }}</span>
+                 <el-tooltip v-if="currentStrategyInfo?.parameter_descriptions?.[key]" :content="currentStrategyInfo.parameter_descriptions[key]" placement="top">
+                   <el-icon style="margin-left: 4px; cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
+                 </el-tooltip>
+              </template>
               <el-input-number 
                 v-model="strategyParams[key]" 
                 style="width: 100%"
@@ -187,13 +315,13 @@
             >
               <div class="trade-header">
                 <span class="trade-date">{{ trade.date }}</span>
-                <el-tag size="small" :type="trade.profit_rate > 0 ? 'danger' : 'success'">
-                  {{ trade.profit_rate?.toFixed(2) }}%
+                <el-tag size="small" :type="trade.type === 'buy' ? 'danger' : (trade.profit_rate && trade.profit_rate > 0 ? 'danger' : 'success')">
+                  {{ trade.type === 'buy' ? '买入' : `卖出 ${trade.profit_rate?.toFixed(2)}%` }}
                 </el-tag>
               </div>
               <div class="trade-details">
-                <span>买: {{ trade.buy_price?.toFixed(2) }}</span>
-                <span>卖: {{ trade.price?.toFixed(2) }}</span>
+                <span>价格: {{ trade.price?.toFixed(2) }}</span>
+                <span v-if="trade.type === 'sell' && trade.buy_price">买入价: {{ trade.buy_price?.toFixed(2) }}</span>
               </div>
             </div>
           </div>
@@ -206,13 +334,20 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, InfoFilled } from '@element-plus/icons-vue'
+import { DataAnalysis, InfoFilled, Collection, ArrowDown, Star, StarFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyAnalyzeResponse } from '@/api/strategy'
+import { customStrategyAPI } from '@/api/customStrategy'
 import { dataAPI } from '@/api/data'
+import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
+
+const isDark = useDark()
 
 // --- State ---
 const strategies = ref<StrategyInfo[]>([])
+const systemStrategies = ref<StrategyInfo[]>([])
+const customStrategies = ref<StrategyInfo[]>([])
 const currentStrategyInfo = ref<StrategyInfo | null>(null)
 const strategyParams = reactive<Record<string, number>>({})
 const analyzing = ref(false)
@@ -223,13 +358,52 @@ const dateRange = ref<[string, string]>(['', ''])
 const analysisForm = reactive({
   strategyName: '',
   stockCode: '',
+  startDate: '',
+  endDate: ''
 })
+
+// Watchlist
+const favorites = ref<WatchlistItem[]>([])
+const isFavorite = computed(() => {
+    if (!analysisForm.stockCode) return false
+    return favorites.value.some(f => f.stock_code === analysisForm.stockCode)
+})
+
+const loadFavorites = async () => {
+    try {
+        const res = await watchlistAPI.getWatchlist()
+        favorites.value = res
+    } catch (e) {
+        console.error('加载收藏列表失败', e)
+    }
+}
+
+const toggleFavorite = async () => {
+    if (!analysisForm.stockCode) return
+    try {
+        if (isFavorite.value) {
+            await watchlistAPI.removeFromWatchlist(analysisForm.stockCode)
+            ElMessage.success('已取消收藏')
+        } else {
+            await watchlistAPI.addToWatchlist(analysisForm.stockCode)
+            ElMessage.success('已收藏')
+        }
+        loadFavorites()
+    } catch (e: any) {
+        ElMessage.error(e.response?.data?.detail || '操作失败')
+    }
+}
+
+const handleFavoriteSelect = (fav: WatchlistItem) => {
+    analysisForm.stockCode = fav.stock_code
+}
 
 // --- Computed Props ---
 
 const watermarkText = computed(() => {
   if (!analysisResult.value) return 'K-Line Strategy'
-  return `${analysisResult.value.stock_code} ${analysisResult.value.strategy_name}`
+  // Return only stock name (or code if name missing)
+  return analysisResult.value.stock_name || analysisResult.value.stock_code
 })
 
 const klineData = computed<ChartData[]>(() => {
@@ -279,21 +453,21 @@ const signalMarkers = computed<Marker[]>(() => {
     
     if (!dateStr) return
     
-    if (item.signal === 1) {
+    if (item.signal === 1 || item.signal === '1') {
       markers.push({
         time: dateStr,
         position: 'belowBar',
-        color: '#e91e63',
+        color: '#F44336',
         shape: 'arrowUp',
-        text: 'Buy'
+        text: 'B'
       })
-    } else if (item.signal === -1) {
+    } else if (item.signal === -1 || item.signal === '-1') {
       markers.push({
         time: dateStr,
         position: 'aboveBar',
-        color: '#2196F3',
+        color: '#4CAF50',
         shape: 'arrowDown',
-        text: 'Sell'
+        text: 'S'
       })
     }
   })
@@ -307,14 +481,17 @@ const indicatorLines = computed<LineData[]>(() => {
   
   // 自动检测MA等指标列
   const keys = Object.keys(data[0] || {})
-  const indicatorKeys = keys.filter(k => 
-    k.startsWith('MA') || k.startsWith('EMA') || k.startsWith('UPPER') || k.startsWith('LOWER')
-  )
+  const indicatorKeys = keys.filter(k => {
+    const upper = k.toUpperCase()
+    return upper.startsWith('MA') || upper.startsWith('EMA') || 
+           upper.startsWith('UPPER') || upper.startsWith('LOWER') ||
+           upper.startsWith('MIDDLE') || upper.includes('BAND')
+  })
   
   const colors = ['#2962FF', '#E91E63', '#FF6D00', '#00B8D4']
   
-  indicatorKeys.forEach((key, index) => {
-    const lineData = data.map((d: any) => {
+    indicatorKeys.forEach((key, index) => {
+    let lineData = data.map((d: any) => {
       // 处理日期格式
       let dateStr = d.date
       if (dateStr) {
@@ -333,6 +510,13 @@ const indicatorLines = computed<LineData[]>(() => {
       }
     }).filter((d: any) => d.time && d.value !== null && d.value !== undefined && !isNaN(d.value))
     
+    // Filter out leading zero values (common in initial calculation period)
+    // Find the first index where value is not 0 (or close to 0)
+    const firstValidIndex = lineData.findIndex(d => Math.abs(d.value) > 0.0001);
+    if (firstValidIndex > 0) {
+      lineData = lineData.slice(firstValidIndex);
+    }
+    
     if (lineData.length > 0) {
       lines.push({
         name: key,
@@ -346,42 +530,10 @@ const indicatorLines = computed<LineData[]>(() => {
   return lines
 })
 
-const equityChartData = computed<ChartData[]>(() => {
-  // 权益图本质上是线图，但KlineChart组件复用了K线结构
-  // 这里我们用K线图组件画Equity Curve有点奇怪，但可以用LineSeries
-  // 为了复用组件，我们构造一个只有close价格的数据集
-  if (!analysisResult.value?.statistics?.dates || !analysisResult.value?.statistics?.equity_curve) return []
-  
-  const dates = analysisResult.value.statistics.dates
-  const equity = analysisResult.value.statistics.equity_curve
-  
-  if (!Array.isArray(dates) || !Array.isArray(equity) || dates.length !== equity.length) return []
-  
-  return dates.map((date: string, i: number) => {
-    // 确保日期格式正确
-    let dateStr = date
-    if (dateStr && typeof dateStr === 'string') {
-      if (dateStr.includes('T')) {
-        dateStr = dateStr.split('T')[0]
-      }
-    }
-    
-    const value = Number(equity[i]) || 0
-    return {
-      time: dateStr || '',
-      open: value,
-      high: value,
-      low: value,
-      close: value,
-      volume: 0
-    }
-  }).filter(item => item.time)
-})
-
 const equityLines = computed<LineData[]>(() => {
   if (!analysisResult.value?.statistics) return []
   const stats = analysisResult.value.statistics
-  const dates = stats.dates
+  const dates = stats.dates || []
   const equity = stats.equity_curve || []
   const benchmark = stats.benchmark_curve || []
   
@@ -406,7 +558,7 @@ const equityLines = computed<LineData[]>(() => {
         time: formatDate(d),
         value: formatValue(equity[i])
       })).filter(d => d.time && !isNaN(d.value)),
-      color: '#e91e63',
+      color: '#FFD700',
       lineWidth: 2
     },
     {
@@ -447,6 +599,9 @@ const getParameterLabel = (key: string): string => {
     'fast_period': '快线周期',
     'slow_period': '慢线周期',
     'signal_period': '信号线周期',
+    'shadow_ratio': '影线比例',
+    'lookback': '回看周期',
+    'doji_threshold': '十字星阈值',
   }
   return labelMap[key] || key
 }
@@ -456,14 +611,36 @@ const defaultParams: Record<string, Record<string, number>> = {
   'MA Strategy': { short_period: 5, long_period: 20 },
   'RSI Strategy': { period: 14, overbought: 70, oversold: 30 },
   'MACD Strategy': { fast_period: 12, slow_period: 26, signal_period: 9 },
-  'Bollinger Strategy': { period: 20, num_std: 2 },
+  'Bollinger Strategy': { period: 20, std_dev: 2 },
   'Momentum Strategy': { period: 10 },
+  'Hammer': { shadow_ratio: 2.0 },
+  'Hanging Man': { shadow_ratio: 2.0 },
+  'Doji': { lookback: 5, doji_threshold: 0.1 },
+  'Bullish Engulfing': {},
+  'Bearish Engulfing': {},
+  'Morning Star': {},
+  'Evening Star': {},
+  'Harami': {},
 }
 
 const loadStrategies = async () => {
   try {
-    const response = await strategyAPI.listStrategies()
-    strategies.value = response.strategies
+    // 加载系统策略
+    const sysRes = await strategyAPI.listStrategies()
+    systemStrategies.value = sysRes.strategies
+
+    // 加载自定义策略
+    try {
+      const customRes = await customStrategyAPI.getList()
+      customStrategies.value = customRes.data.strategies.map(s => ({
+        ...s,
+        is_system: false
+      }))
+    } catch (e) {
+      console.warn('加载自定义策略失败', e)
+    }
+
+    strategies.value = [...systemStrategies.value, ...customStrategies.value]
   } catch (error: any) {
     ElMessage.error('加载策略失败')
   }
@@ -474,8 +651,35 @@ const handleStrategyChange = async (strategyName: string) => {
   Object.keys(strategyParams).forEach(k => delete strategyParams[k])
   
   try {
-    const info = await strategyAPI.getStrategyInfo(strategyName)
-    currentStrategyInfo.value = info
+    // 先在列表中查找，看是系统策略还是自定义策略
+    const strategy = strategies.value.find(s => s.name === strategyName)
+    
+    if (strategy) {
+       // 如果已有了详细信息则直接使用，否则请求API
+       // 注意：列表返回的信息可能不全，最好还是请求一次详情
+       if (strategy.is_system) {
+          const info = await strategyAPI.getStrategyInfo(strategyName)
+          currentStrategyInfo.value = info
+       } else {
+          // 自定义策略需要找到ID来获取详情，或者直接使用列表中的信息（如果够的话）
+          // 这里假设 name 是唯一的
+          // customStrategyAPI.getDetail 需要 id，所以我们得从列表中找到 id
+          const customStrategy = customStrategies.value.find(s => s.name === strategyName)
+          if (customStrategy && 'id' in customStrategy) {
+             const res = await customStrategyAPI.getDetail((customStrategy as any).id)
+             // 转换为 StrategyInfo 格式
+             currentStrategyInfo.value = {
+                name: res.data.name,
+                description: res.data.description,
+                detailed_description: res.data.detailed_description,
+                parameter_descriptions: res.data.parameter_descriptions,
+                is_system: false
+             }
+          }
+       }
+    }
+
+    // 设置默认参数
     if (defaultParams[strategyName]) {
       Object.assign(strategyParams, defaultParams[strategyName])
     }
@@ -544,6 +748,7 @@ const handleReset = () => {
 
 onMounted(() => {
   loadStrategies()
+  loadFavorites()
   // Default date range: last 6 months
   const end = new Date()
   const start = new Date()
@@ -596,6 +801,10 @@ onMounted(() => {
   border-bottom: 1px solid #eee;
 }
 
+html.dark .chart-tabs {
+  border-bottom: 1px solid #333;
+}
+
 .chart-wrapper {
   flex: 1;
   position: relative;
@@ -643,12 +852,25 @@ onMounted(() => {
 .stat-item .label {
   font-size: 12px;
   color: #909399;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.info-icon {
+  cursor: pointer;
+  font-size: 12px;
+  color: #909399;
 }
 
 .stat-item .value {
   font-size: 18px;
   font-weight: 600;
   color: #303133;
+}
+
+html.dark .stat-item .value {
+  color: #e0e0e0;
 }
 
 .up { color: #f56c6c !important; }
@@ -678,6 +900,10 @@ onMounted(() => {
   border-radius: 4px;
 }
 
+html.dark .trade-item {
+  background: #2d2d2d;
+}
+
 .trade-header {
   display: flex;
   justify-content: space-between;
@@ -690,5 +916,9 @@ onMounted(() => {
   justify-content: space-between;
   font-size: 13px;
   color: #606266;
+}
+
+html.dark .trade-details {
+  color: #a0a0a0;
 }
 </style>

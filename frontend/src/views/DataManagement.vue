@@ -68,8 +68,17 @@
             <span v-else style="color: #909399">暂无数据</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
+            <el-button 
+                :type="favoritesMap[row.code] ? 'warning' : 'default'" 
+                size="small" 
+                circle
+                :icon="favoritesMap[row.code] ? StarFilled : Star"
+                @click="toggleFavorite(row)"
+                :title="favoritesMap[row.code] ? '取消收藏' : '收藏'"
+                style="margin-right: 8px;"
+            />
             <el-button type="primary" size="small" @click="handleViewData(row)">
               查看数据
             </el-button>
@@ -114,8 +123,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, Star, StarFilled } from '@element-plus/icons-vue'
 import { dataAPI, type StockInfo } from '@/api/data'
+import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -133,6 +143,39 @@ const pageSize = ref(50)
 
 const fetchDialogVisible = ref(false)
 const selectedStock = ref<StockInfo | null>(null)
+
+// Watchlist Map for quick lookup
+const favoritesMap = ref<Record<string, boolean>>({})
+
+// Load Favorites
+const loadFavorites = async () => {
+    try {
+        const list = await watchlistAPI.getWatchlist()
+        const map: Record<string, boolean> = {}
+        list.forEach((item: WatchlistItem) => {
+            map[item.stock_code] = true
+        })
+        favoritesMap.value = map
+    } catch (e) {
+        console.error('Failed to load favorites', e)
+    }
+}
+
+const toggleFavorite = async (stock: StockInfo) => {
+    try {
+        if (favoritesMap.value[stock.code]) {
+            await watchlistAPI.removeFromWatchlist(stock.code)
+            favoritesMap.value[stock.code] = false
+            ElMessage.success(`已取消收藏 ${stock.name}`)
+        } else {
+            await watchlistAPI.addToWatchlist(stock.code)
+            favoritesMap.value[stock.code] = true
+            ElMessage.success(`已收藏 ${stock.name}`)
+        }
+    } catch (e: any) {
+        ElMessage.error(e.response?.data?.detail || '操作失败')
+    }
+}
 
 
 const totalStocks = computed(() => {
@@ -282,6 +325,7 @@ const formatVolume = (volume: number): string => {
 
 onMounted(() => {
   loadStockList()
+  loadFavorites()
 })
 </script>
 

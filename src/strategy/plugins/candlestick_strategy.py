@@ -201,7 +201,24 @@ class HammerStrategy(BaseStrategy):
         """
         super().__init__(
             name="Hammer",
-            description=f"Hammer Candlestick Pattern (shadow_ratio: {shadow_ratio})"
+            description="锤子线形态：看涨反转信号",
+            detailed_description="""锤子线（Hammer）是一种看涨反转的蜡烛图形态。
+
+            形态特征：
+            - 实体小，位于K线上部
+            - 下影线长度至少是实体的2倍
+            - 上影线很短或没有
+            - 可能出现在下跌趋势中
+
+            交易信号：
+            - 产生买入信号
+
+            适用场景：
+            - 出现在下跌趋势底部，可能预示反转
+            - 需要结合其他技术指标确认""",
+            parameter_descriptions={
+                "shadow_ratio": "影线比例：下影线长度与实体长度的最小比例，默认2.0",
+            }
         )
         self.shadow_ratio = shadow_ratio
     
