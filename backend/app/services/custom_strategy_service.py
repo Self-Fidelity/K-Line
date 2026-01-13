@@ -39,6 +39,68 @@ class CustomStrategyService:
         conn.row_factory = sqlite3.Row
         return conn
     
+    def _extract_strategy_info(self, code: str) -> Dict[str, Any]:
+        """
+        从策略代码中提取策略信息（包括parameter_descriptions）
+        
+        Args:
+            code: 策略代码
+            
+        Returns:
+            包含策略信息的字典
+        """
+        info = {
+            'name': None,
+            'description': None,
+            'detailed_description': None,
+            'parameter_descriptions': {}
+        }
+        
+        try:
+            # 尝试加载策略类
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+                f.write(code)
+                temp_file = Path(f.name)
+            
+            try:
+                spec = importlib.util.spec_from_file_location("temp_strategy", temp_file)
+                if spec is None or spec.loader is None:
+                    return info
+                
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                # 查找策略类
+                strategy_class = None
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if (
+                        issubclass(obj, BaseStrategy)
+                        and obj != BaseStrategy
+                        and obj.__module__ == module.__name__
+                    ):
+                        strategy_class = obj
+                        break
+                
+                if strategy_class:
+                    # 实例化策略以获取信息
+                    strategy = strategy_class()
+                    info['name'] = strategy.name
+                    info['description'] = strategy.description
+                    info['detailed_description'] = strategy.detailed_description
+                    info['parameter_descriptions'] = strategy.parameter_descriptions or {}
+            
+            finally:
+                # 清理临时文件
+                try:
+                    temp_file.unlink()
+                except:
+                    pass
+        
+        except Exception as e:
+            logger.warning(f"提取策略信息失败: {e}")
+        
+        return info
+    
     def create_strategy(
         self,
         user_id: int,
@@ -61,12 +123,22 @@ class CustomStrategyService:
             if not validation.valid:
                 raise ValueError(f"策略代码验证失败: {', '.join(validation.errors)}")
             
+            # 从策略代码中提取信息（如果用户没有提供，则使用提取的信息）
+            extracted_info = self._extract_strategy_info(strategy_data.code)
+            
+            # 使用用户提供的信息，如果没有则使用提取的信息
+            final_name = strategy_data.name or extracted_info['name'] or '未命名策略'
+            final_description = strategy_data.description or extracted_info['description'] or ''
+            final_detailed_description = strategy_data.detailed_description or extracted_info['detailed_description'] or ''
+            # parameter_descriptions: 优先使用用户提供的，如果没有则使用从代码中提取的
+            final_parameter_descriptions = strategy_data.parameter_descriptions or extracted_info['parameter_descriptions']
+            
             # 生成策略文件路径
             user_strategy_dir = self.custom_strategy_dir / str(user_id)
             user_strategy_dir.mkdir(parents=True, exist_ok=True)
             
             # 生成安全的文件名（基于策略名称）
-            safe_name = "".join(c for c in strategy_data.name if c.isalnum() or c in (' ', '-', '_')).strip()
+            safe_name = "".join(c for c in final_name if c.isalnum() or c in (' ', '-', '_')).strip()
             safe_name = safe_name.replace(' ', '_')
             file_name = f"{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py"
             file_path = user_strategy_dir / file_name
@@ -83,18 +155,18 @@ class CustomStrategyService:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
-                strategy_data.name,
-                strategy_data.description,
-                strategy_data.detailed_description,
+                final_name,
+                final_description,
+                final_detailed_description,
                 strategy_data.code,
-                json.dumps(strategy_data.parameter_descriptions, ensure_ascii=False),
+                json.dumps(final_parameter_descriptions, ensure_ascii=False),
                 str(file_path),
                 now,
             ))
             strategy_id = cursor.lastrowid
             conn.commit()
             
-            logger.info(f"用户 {user_id} 创建自定义策略: {strategy_data.name} (ID: {strategy_id})")
+            logger.info(f"用户 {user_id} 创建自定义策略: {final_name} (ID: {strategy_id})")
             
             return self.get_strategy(strategy_id, user_id)
             
@@ -264,7 +336,7 @@ class CustomStrategyService:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, user_id, name, description, detailed_description, 
-                       parameter_descriptions, is_public, is_system, 
+                       code, parameter_descriptions, is_public, is_system, 
                        created_at, updated_at
                 FROM custom_strategies 
                 WHERE id = ? AND user_id = ?
@@ -274,13 +346,29 @@ class CustomStrategyService:
             if not row:
                 raise ValueError(f"策略不存在或无权限访问")
             
+            # 解析parameter_descriptions
+            param_descs = json.loads(row['parameter_descriptions'] or '{}')
+            
+            # 如果parameter_descriptions为空，尝试从代码中提取
+            if not param_descs or len(param_descs) == 0:
+                extracted_info = self._extract_strategy_info(row['code'])
+                if extracted_info['parameter_descriptions']:
+                    param_descs = extracted_info['parameter_descriptions']
+                    # 更新数据库中的parameter_descriptions
+                    cursor.execute("""
+                        UPDATE custom_strategies 
+                        SET parameter_descriptions = ?
+                        WHERE id = ?
+                    """, (json.dumps(param_descs, ensure_ascii=False), strategy_id))
+                    conn.commit()
+            
             return CustomStrategyInfo(
                 id=row['id'],
                 user_id=row['user_id'],
                 name=row['name'],
                 description=row['description'] or '',
                 detailed_description=row['detailed_description'] or '',
-                parameter_descriptions=json.loads(row['parameter_descriptions'] or '{}'),
+                parameter_descriptions=param_descs,
                 is_public=bool(row['is_public']),
                 is_system=bool(row['is_system']),
                 created_at=row['created_at'],
@@ -315,6 +403,22 @@ class CustomStrategyService:
             if not row:
                 raise ValueError(f"策略不存在或无权限访问")
             
+            # 解析parameter_descriptions
+            param_descs = json.loads(row['parameter_descriptions'] or '{}')
+            
+            # 如果parameter_descriptions为空，尝试从代码中提取
+            if not param_descs or len(param_descs) == 0:
+                extracted_info = self._extract_strategy_info(row['code'])
+                if extracted_info['parameter_descriptions']:
+                    param_descs = extracted_info['parameter_descriptions']
+                    # 更新数据库中的parameter_descriptions
+                    cursor.execute("""
+                        UPDATE custom_strategies 
+                        SET parameter_descriptions = ?
+                        WHERE id = ?
+                    """, (json.dumps(param_descs, ensure_ascii=False), strategy_id))
+                    conn.commit()
+            
             return CustomStrategyDetail(
                 id=row['id'],
                 user_id=row['user_id'],
@@ -322,7 +426,7 @@ class CustomStrategyService:
                 description=row['description'] or '',
                 detailed_description=row['detailed_description'] or '',
                 code=row['code'],
-                parameter_descriptions=json.loads(row['parameter_descriptions'] or '{}'),
+                parameter_descriptions=param_descs,
                 is_public=bool(row['is_public']),
                 is_system=bool(row['is_system']),
                 created_at=row['created_at'],

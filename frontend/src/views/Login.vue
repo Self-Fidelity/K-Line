@@ -57,7 +57,7 @@
       </el-form>
       
       <div class="login-footer">
-        <span>© 2024 K-Line Quant. All rights reserved.</span>
+        <span>© 2026 K-Line Quant. All rights reserved.</span>
       </div>
     </div>
   </div>

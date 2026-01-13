@@ -1,130 +1,121 @@
 <template>
   <div class="chart-view-container">
-    <div class="control-panel">
-      <!-- Search & Date Range -->
-      <div class="search-section">
-        <!-- Favorites Dropdown -->
-         <el-dropdown trigger="click" @command="handleFavoriteSelect">
-          <el-button :icon="Collection">
-            我的收藏 <el-icon class="el-icon--right"><arrow-down /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
-              <el-dropdown-item 
-                v-for="fav in favorites" 
-                :key="fav.id" 
-                :command="fav"
-              >
-                {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+    <!-- 顶部控制栏 -->
+    <el-card class="control-panel" :body-style="{ padding: '15px 20px' }">
+      <el-form :inline="true" class="control-form">
+        <el-form-item label="股票">
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <el-dropdown trigger="click" @command="handleFavoriteSelect">
+              <el-button :icon="Collection" circle title="我的收藏" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
+                  <el-dropdown-item 
+                    v-for="fav in favorites" 
+                    :key="fav.id" 
+                    :command="fav"
+                  >
+                    {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
 
-        <el-autocomplete
-          v-model="searchQuery"
-          :fetch-suggestions="querySearch"
-          placeholder="股票代码/名称"
-          @select="handleSelect"
-          class="stock-search"
-          :trigger-on-focus="false"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-          <template #default="{ item }">
-            <div class="stock-item">
-              <span class="code">{{ item.value }}</span>
-              <span class="name">{{ item.stock.name }}</span>
-            </div>
-          </template>
-        </el-autocomplete>
+            <el-autocomplete
+              v-model="searchQuery"
+              :fetch-suggestions="querySearch"
+              placeholder="代码/名称"
+              style="width: 180px"
+              @select="handleSelect"
+            >
+              <template #default="{ item }">
+                <span class="stock-code">{{ item.value }}</span>
+                <span class="stock-name">{{ item.stock.name }}</span>
+              </template>
+            </el-autocomplete>
 
-        <!-- Favorite Toggle Button -->
-        <el-button 
-            :type="isFavorite ? 'warning' : 'default'" 
-            :icon="isFavorite ? StarFilled : Star" 
-            circle 
-            @click="toggleFavorite"
-            :disabled="!currentStock"
-            title="收藏当前股票"
-        />
-
-        <el-date-picker
-          v-model="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          :shortcuts="shortcuts"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-          @change="handleDateChange"
-          class="date-picker"
-        />
-      </div>
-
-      <!-- Main Indicators Control -->
-      <div class="indicator-group">
-        <span class="group-label">主图</span>
-        <div class="indicator-controls">
-          <el-popover placement="bottom" trigger="click" width="200">
-            <template #reference>
-              <div style="display: inline-block;">
-                <el-button size="small" :type="activeMainIndicator === 'MA' ? 'primary' : ''">MA</el-button>
-              </div>
-            </template>
-            <div class="checkbox-list">
-              <el-checkbox v-model="maConfig.ma5" label="MA5" @change="updateLines" />
-              <el-checkbox v-model="maConfig.ma10" label="MA10" @change="updateLines" />
-              <el-checkbox v-model="maConfig.ma20" label="MA20" @change="updateLines" />
-              <el-checkbox v-model="maConfig.ma30" label="MA30" @change="updateLines" />
-              <el-checkbox v-model="maConfig.ma60" label="MA60" @change="updateLines" />
-            </div>
-          </el-popover>
-          
-          <el-tooltip content="清除主图指标" placement="top" :show-after="500">
-             <el-button size="small" circle :icon="Close" @click="clearMainIndicator" />
-          </el-tooltip>
-        </div>
-      </div>
-
-      <!-- Sub Indicators Control -->
-      <div class="indicator-group">
-        <span class="group-label">副图</span>
-        <el-radio-group v-model="selectedSubIndicator" size="small" @change="updateLines">
-          <el-radio-button value="VOL">VOL</el-radio-button>
-          <el-radio-button value="MACD">MACD</el-radio-button>
-          <el-radio-button value="KDJ">KDJ</el-radio-button>
-          <el-radio-button value="RSI">RSI</el-radio-button>
-          <el-radio-button value="WR">WR</el-radio-button>
-          <el-radio-button value="CCI">CCI</el-radio-button>
-          <el-radio-button value="BIAS">BIAS</el-radio-button>
-          <el-radio-button value="OBV">OBV</el-radio-button>
-        </el-radio-group>
-        <el-popover placement="bottom" trigger="hover" width="300">
-          <template #reference>
-            <el-icon class="help-icon"><QuestionFilled /></el-icon>
-          </template>
-          <div class="indicator-help">
-            <div v-if="activeMainIndicator">
-              <div class="title">{{ indicatorInfo[activeMainIndicator].name }}</div>
-              <div class="desc">{{ indicatorInfo[activeMainIndicator].desc }}</div>
-              <el-divider style="margin: 8px 0" />
-            </div>
-            <div class="title">{{ subIndicators[selectedSubIndicator].name }}</div>
-            <div class="desc">{{ subIndicators[selectedSubIndicator].desc }}</div>
+            <el-button 
+              :type="isFavorite ? 'warning' : 'default'" 
+              :icon="isFavorite ? StarFilled : Star" 
+              circle 
+              @click="toggleFavorite"
+              :disabled="!currentStock"
+              title="收藏当前股票"
+            />
           </div>
-        </el-popover>
-      </div>
+        </el-form-item>
 
-      <div class="action-section">
-         <el-button type="primary" @click="fetchData" :loading="loading">
-           <el-icon><Refresh /></el-icon> 刷新
-         </el-button>
-      </div>
-    </div>
+        <el-form-item label="时间">
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            :shortcuts="shortcuts"
+            style="width: 260px"
+            @change="handleDateChange"
+          />
+        </el-form-item>
+
+        <el-form-item label="主图">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <el-popover placement="bottom" trigger="click" width="200">
+              <template #reference>
+                <el-button size="small" :type="activeMainIndicator === 'MA' ? 'primary' : ''">MA</el-button>
+              </template>
+              <div class="checkbox-list">
+                <el-checkbox v-model="maConfig.ma5" label="MA5" @change="updateLines" />
+                <el-checkbox v-model="maConfig.ma10" label="MA10" @change="updateLines" />
+                <el-checkbox v-model="maConfig.ma20" label="MA20" @change="updateLines" />
+                <el-checkbox v-model="maConfig.ma30" label="MA30" @change="updateLines" />
+                <el-checkbox v-model="maConfig.ma60" label="MA60" @change="updateLines" />
+              </div>
+            </el-popover>
+            
+            <el-tooltip content="清除主图指标" placement="top" :show-after="500">
+              <el-button size="small" circle :icon="Close" @click="clearMainIndicator" />
+            </el-tooltip>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="副图">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <el-radio-group v-model="selectedSubIndicator" size="small" @change="updateLines">
+              <el-radio-button value="VOL">VOL</el-radio-button>
+              <el-radio-button value="MACD">MACD</el-radio-button>
+              <el-radio-button value="KDJ">KDJ</el-radio-button>
+              <el-radio-button value="RSI">RSI</el-radio-button>
+              <el-radio-button value="WR">WR</el-radio-button>
+              <el-radio-button value="CCI">CCI</el-radio-button>
+              <el-radio-button value="BIAS">BIAS</el-radio-button>
+              <el-radio-button value="OBV">OBV</el-radio-button>
+            </el-radio-group>
+            <el-popover placement="bottom" trigger="hover" width="300">
+              <template #reference>
+                <el-icon class="help-icon"><QuestionFilled /></el-icon>
+              </template>
+              <div class="indicator-help">
+                <div v-if="activeMainIndicator">
+                  <div class="title">{{ indicatorInfo[activeMainIndicator].name }}</div>
+                  <div class="desc">{{ indicatorInfo[activeMainIndicator].desc }}</div>
+                  <el-divider style="margin: 8px 0" />
+                </div>
+                <div class="title">{{ subIndicators[selectedSubIndicator].name }}</div>
+                <div class="desc">{{ subIndicators[selectedSubIndicator].desc }}</div>
+              </div>
+            </el-popover>
+          </div>
+        </el-form-item>
+
+        <el-form-item>
+          <el-button type="primary" @click="fetchData" :loading="loading">
+            <el-icon><Refresh /></el-icon> 刷新
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
 
     <div class="main-content">
       <!-- Chart Area -->
@@ -188,7 +179,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Search, Refresh, Close, QuestionFilled, Star, StarFilled, Collection, ArrowDown } from '@element-plus/icons-vue';
+import { Refresh, Close, QuestionFilled, Star, StarFilled, Collection } from '@element-plus/icons-vue';
 import { useDark } from '@vueuse/core';
 import { ElMessage } from 'element-plus';
 import KlineChart, { type ChartData, type LineData } from '@/components/KlineChart.vue';
@@ -260,7 +251,7 @@ const shortcuts = [
   { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
   { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
   { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
-  { text: '今年以来', value: () => { const end = new Date(); const start = new Date(new Date().getFullYear(), 0, 1); return [start, end]; } },
+  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
 ];
 
 const getValueColor = (val: number) => {
@@ -394,13 +385,14 @@ const fetchData = async () => {
       dateRange.value?.[1]
     );
     
-    klineData.value = rawData.map(item => ({
+    klineData.value = rawData.map((item: any) => ({
       time: item.date,
       open: item.open,
       high: item.high,
       low: item.low,
       close: item.close,
-      volume: item.volume
+      volume: item.volume,
+      pct_chg: item.pct_chg !== undefined && item.pct_chg !== null ? Number(item.pct_chg) : undefined
     }));
     
     updateLines();
@@ -492,54 +484,13 @@ onMounted(() => {
 }
 
 .control-panel {
-  padding: 12px 24px;
-  background-color: v.$bg-secondary;
-  border-bottom: 1px solid v.$border-color;
+  flex-shrink: 0;
+}
+
+.control-form {
   display: flex;
-  align-items: center;
-  gap: 24px;
   flex-wrap: wrap;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  z-index: 10;
-
-  .search-section {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    
-    .stock-search {
-      width: 240px;
-    }
-    
-    .date-picker {
-      width: 300px;
-    }
-  }
-
-  .indicator-group {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding-left: 20px;
-    border-left: 1px solid v.$border-color;
-    
-    .group-label {
-      font-size: 13px;
-      color: v.$text-secondary;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    
-    .indicator-controls {
-      display: flex;
-      gap: 8px;
-    }
-  }
-  
-  .action-section {
-      margin-left: auto;
-      margin-right: 20px;
-  }
+  gap: 10px;
 }
 
 .checkbox-list {
@@ -636,11 +587,14 @@ onMounted(() => {
   }
 }
 
-.stock-item {
-  display: flex;
-  justify-content: space-between;
-  .code { font-weight: bold; }
-  .name { color: #888; font-size: 0.9em; }
+.stock-code {
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.stock-name {
+  color: #909399;
+  font-size: 12px;
 }
 
 .text-up { color: #f56c6c; }

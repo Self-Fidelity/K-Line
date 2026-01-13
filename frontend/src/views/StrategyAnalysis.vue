@@ -86,6 +86,7 @@
             start-placeholder="开始日期"
             end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
+            :shortcuts="dateShortcuts"
             style="width: 260px"
             @change="handleDateRangeChange"
           />
@@ -282,14 +283,17 @@
             </div>
           </template>
           
-          <el-form size="small" label-position="top">
+          <div v-if="Object.keys(strategyParams).length === 0" style="color: #909399; padding: 20px; text-align: center">
+            该策略无需额外参数配置
+          </div>
+          <el-form v-else size="small" label-position="top">
             <el-form-item
-              v-for="(val, key) in strategyParams"
+              v-for="(_, key) in strategyParams"
               :key="key"
             >
               <template #label>
                  <span>{{ getParameterLabel(key) }}</span>
-                 <el-tooltip v-if="currentStrategyInfo?.parameter_descriptions?.[key]" :content="currentStrategyInfo.parameter_descriptions[key]" placement="top">
+                 <el-tooltip v-if="currentStrategyInfo?.parameter_descriptions?.[key]" :content="typeof currentStrategyInfo.parameter_descriptions[key] === 'string' ? currentStrategyInfo.parameter_descriptions[key] : (currentStrategyInfo.parameter_descriptions[key] as any)?.description || ''" placement="top">
                    <el-icon style="margin-left: 4px; cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
                  </el-tooltip>
               </template>
@@ -334,7 +338,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, InfoFilled, Collection, ArrowDown, Star, StarFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { DataAnalysis, Collection, Star, StarFilled, QuestionFilled } from '@element-plus/icons-vue'
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyAnalyzeResponse } from '@/api/strategy'
 import { customStrategyAPI } from '@/api/customStrategy'
@@ -429,7 +433,8 @@ const klineData = computed<ChartData[]>(() => {
       high: Number(item.high) || 0,
       low: Number(item.low) || 0,
       close: Number(item.close) || 0,
-      volume: Number(item.volume) || 0
+      volume: Number(item.volume) || 0,
+      pct_chg: item.pct_chg !== undefined && item.pct_chg !== null ? Number(item.pct_chg) : undefined
     }
   }).filter(item => item.time) // 过滤掉没有时间的项
 })
@@ -602,7 +607,18 @@ const getParameterLabel = (key: string): string => {
     'shadow_ratio': '影线比例',
     'lookback': '回看周期',
     'doji_threshold': '十字星阈值',
+    'up_tolerance': '上涨容忍值',
+    'down_tolerance': '下跌容忍值',
   }
+  
+  // 如果参数描述中有标签，优先使用
+  if (currentStrategyInfo.value?.parameter_descriptions?.[key]) {
+    const paramDesc = currentStrategyInfo.value.parameter_descriptions[key]
+    if (typeof paramDesc === 'object' && (paramDesc as any)?.label) {
+      return (paramDesc as any).label
+    }
+  }
+  
   return labelMap[key] || key
 }
 
@@ -623,27 +639,68 @@ const defaultParams: Record<string, Record<string, number>> = {
   'Harami': {},
 }
 
+// 日期快捷选项
+const dateShortcuts = [
+  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
+  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
+  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
+  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
+]
+
 const loadStrategies = async () => {
   try {
-    // 加载系统策略
+    // 加载所有策略（系统策略 + 自定义策略）
     const sysRes = await strategyAPI.listStrategies()
-    systemStrategies.value = sysRes.strategies
-
-    // 加载自定义策略
+    
+    // 根据 is_system 字段分类
+    systemStrategies.value = sysRes.strategies.filter(s => s.is_system === true)
+    
+    // 加载自定义策略（从自定义策略API获取，确保数据一致性）
     try {
       const customRes = await customStrategyAPI.getList()
       customStrategies.value = customRes.data.strategies.map(s => ({
         ...s,
         is_system: false
       }))
+      
+      // 去重：如果自定义策略在系统策略列表中也存在（同名），则从系统策略中移除
+      const customStrategyNames = new Set(customStrategies.value.map(s => s.name))
+      systemStrategies.value = systemStrategies.value.filter(s => !customStrategyNames.has(s.name))
     } catch (e) {
       console.warn('加载自定义策略失败', e)
+      // 如果自定义策略API失败，从系统策略列表中过滤出自定义策略
+      customStrategies.value = sysRes.strategies.filter(s => s.is_system === false)
     }
 
     strategies.value = [...systemStrategies.value, ...customStrategies.value]
   } catch (error: any) {
     ElMessage.error('加载策略失败')
   }
+}
+
+// 从参数描述中提取默认值
+const extractDefaultValue = (paramName: string, description: string): number => {
+  // 尝试从描述中提取默认值（例如："默认0.01（1%）"）
+  const defaultMatch = description.match(/默认[:\s]*([0-9.]+)/)
+  if (defaultMatch) {
+    const value = parseFloat(defaultMatch[1])
+    if (!isNaN(value)) {
+      return value
+    }
+  }
+  
+  // 根据参数名推断默认值
+  if (paramName.includes('tolerance') || paramName.includes('threshold')) {
+    return 0.01  // 容忍值/阈值通常默认0.01
+  }
+  if (paramName.includes('period')) {
+    return 20  // 周期通常默认20
+  }
+  if (paramName.includes('ratio') || paramName.includes('dev')) {
+    return 2.0  // 比率/标准差通常默认2.0
+  }
+  
+  return 1  // 其他参数默认1
 }
 
 const handleStrategyChange = async (strategyName: string) => {
@@ -665,8 +722,10 @@ const handleStrategyChange = async (strategyName: string) => {
           // 这里假设 name 是唯一的
           // customStrategyAPI.getDetail 需要 id，所以我们得从列表中找到 id
           const customStrategy = customStrategies.value.find(s => s.name === strategyName)
+          
           if (customStrategy && 'id' in customStrategy) {
              const res = await customStrategyAPI.getDetail((customStrategy as any).id)
+             
              // 转换为 StrategyInfo 格式
              currentStrategyInfo.value = {
                 name: res.data.name,
@@ -681,17 +740,26 @@ const handleStrategyChange = async (strategyName: string) => {
 
     // 设置默认参数
     if (defaultParams[strategyName]) {
+      // 系统策略使用预定义的默认参数
       Object.assign(strategyParams, defaultParams[strategyName])
+    } else if (currentStrategyInfo.value?.parameter_descriptions) {
+      // 自定义策略：从parameter_descriptions中提取参数并设置默认值
+      const paramDescs = currentStrategyInfo.value.parameter_descriptions
+      
+      for (const [key, desc] of Object.entries(paramDescs)) {
+        const description = typeof desc === 'string' ? desc : (desc as any)?.description || ''
+        strategyParams[key] = extractDefaultValue(key, description)
+      }
     }
   } catch (e) {
-    console.error(e)
+    console.error('加载策略信息失败:', e)
   }
 }
 
 const searchStocks = async (query: string, cb: any) => {
   if (!query) return cb([])
   try {
-    const res = await dataAPI.getStockList('all', false)
+    const res = await dataAPI.getStockList('all')
     const results = res.stocks
       .filter(s => s.code.includes(query) || s.name.includes(query))
       .slice(0, 10)

@@ -65,6 +65,7 @@ export interface ChartData {
   low: number;
   close: number;
   volume?: number;
+  pct_chg?: number; // 涨跌幅（百分比，如 2.5 表示 2.5%）
 }
 
 export interface Marker {
@@ -269,7 +270,13 @@ const handleCrosshairMove = (param: MouseEventParams, type: 'main' | 'sub') => {
             const last = props.data[props.data.length - 1];
             const prev = props.data.length > 1 ? props.data[props.data.length - 2] : last;
             // Always update main legend regardless of source type
-            currentOHLC.value = { ...last, prevClose: prev.close };
+            // 对于最后一根K线，如果有pct_chg则使用，否则计算
+            let prevClose = prev.close;
+            if (last.pct_chg !== undefined && last.pct_chg !== null) {
+                // 如果有pct_chg，反推前一日收盘价
+                prevClose = last.close / (1 + last.pct_chg / 100);
+            }
+            currentOHLC.value = { ...last, prevClose };
             
             // Reset indicators
             updateIndicatorLegend(props.lines.filter(l => l.pane !== 'sub'), props.data.length - 1, currentMainIndicators);
@@ -296,8 +303,23 @@ const handleCrosshairMove = (param: MouseEventParams, type: 'main' | 'sub') => {
     if (index >= 0) {
         // Update legends for both charts
         const d = props.data[index];
-        const prev = index > 0 ? props.data[index - 1] : d;
-        currentOHLC.value = { ...d, prevClose: prev.close };
+        let prevClose: number;
+        
+        if (index > 0) {
+            // 有前一日数据，直接使用前一日收盘价
+            prevClose = props.data[index - 1].close;
+        } else {
+            // 第一根K线：优先使用数据中的pct_chg字段
+            if (d.pct_chg !== undefined && d.pct_chg !== null) {
+                // 如果有pct_chg，反推前一日收盘价
+                prevClose = d.close / (1 + d.pct_chg / 100);
+            } else {
+                // 如果没有pct_chg，使用当前收盘价（显示0%）
+                prevClose = d.close;
+            }
+        }
+        
+        currentOHLC.value = { ...d, prevClose };
         
         updateIndicatorLegend(props.lines.filter(l => l.pane !== 'sub'), index, currentMainIndicators);
         if (props.showSubChart) {
@@ -356,8 +378,20 @@ const updateData = (fitContent = false) => {
         // Init Legend
         const lastIndex = unique.length - 1;
         const last = unique[lastIndex];
-        const prev = unique[lastIndex > 0 ? lastIndex - 1 : 0];
-        currentOHLC.value = { ...last, prevClose: prev.close };
+        let prevClose: number;
+        if (lastIndex > 0) {
+            prevClose = unique[lastIndex - 1].close;
+        } else {
+            // 第一根K线：优先使用数据中的pct_chg字段
+            if (last.pct_chg !== undefined && last.pct_chg !== null) {
+                // 如果有pct_chg，反推前一日收盘价
+                prevClose = last.close / (1 + last.pct_chg / 100);
+            } else {
+                // 如果没有pct_chg，使用当前收盘价（显示0%）
+                prevClose = last.close;
+            }
+        }
+        currentOHLC.value = { ...last, prevClose };
     }
 
     // Lines
@@ -434,15 +468,40 @@ const updateData = (fitContent = false) => {
     }
 
     if (fitContent) {
-        mainChart.timeScale().fitContent();
+        // 使用requestAnimationFrame确保在数据设置后的下一帧调用fitContent
+        // 这样可以避免闪烁，让图表在绘制时就直接占满画布
+        requestAnimationFrame(() => {
+            if (mainChart && props.data.length > 0) {
+                mainChart.timeScale().fitContent();
+            }
+        });
         // Sub chart syncs automatically via logic range
     }
 };
 
 watch(() => props.data, () => {
     if (!mainChart) initCharts();
-    else updateData(true);
+    else {
+        updateData(true);
+        // 使用requestAnimationFrame确保在下一帧渲染时调用fitContent，避免闪烁
+        requestAnimationFrame(() => {
+            if (mainChart && props.data.length > 0) {
+                mainChart.timeScale().fitContent();
+            }
+        });
+    }
 }, { deep: true });
+
+// 暴露fitContent方法供父组件调用
+const fitContent = () => {
+    if (mainChart && props.data.length > 0) {
+        mainChart.timeScale().fitContent();
+    }
+};
+
+defineExpose({
+    fitContent
+});
 
 watch(() => props.markers, () => {
     if (markersPlugin && props.data.length > 0) {

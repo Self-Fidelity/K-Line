@@ -284,9 +284,13 @@ class StrategyService:
         # 找出结果中确实缺失的必要列
         missing_columns = [col for col in required_columns if col not in result.columns]
         
-        if missing_columns:
-            # 只合并缺失的列
-            cols_to_merge = ['date'] + missing_columns
+        # 可选字段：如果原始数据中有，也合并进来（用于前端显示）
+        optional_columns = ['pct_chg']
+        available_optional_columns = [col for col in optional_columns if col in data_copy.columns and col not in result.columns]
+        
+        if missing_columns or available_optional_columns:
+            # 合并缺失的必要列和可选的字段
+            cols_to_merge = ['date'] + missing_columns + available_optional_columns
             # 使用左连接保留策略结果的行（策略可能过滤了某些行）
             result = pd.merge(result, data_copy[cols_to_merge], on='date', how='left')
             

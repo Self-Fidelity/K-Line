@@ -1,7 +1,5 @@
 <template>
   <div class="batch-analysis">
-    <h1>批量股票买点检测</h1>
-
     <el-card>
       <template #header>
         <div class="card-header">

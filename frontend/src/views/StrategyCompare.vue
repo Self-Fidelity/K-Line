@@ -1,71 +1,141 @@
 <template>
   <div class="strategy-compare">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>策略比较</span>
-        </div>
-      </template>
-
-      <!-- 策略选择和参数配置 -->
-      <el-form :model="compareForm" label-width="120px" :inline="true">
+    <!-- 顶部控制栏 -->
+    <el-card class="control-panel" :body-style="{ padding: '15px 20px' }">
+      <el-form :model="compareForm" :inline="true" class="control-form">
         <el-form-item label="选择策略" required>
-          <el-select
-            v-model="compareForm.strategy_names"
-            placeholder="请选择至少两个策略"
-            style="width: 300px"
-            multiple
-            filterable
-            :max-collapse-tags="3"
-            @change="handleStrategiesChange"
-          >
-            <el-option
-              v-for="strategy in strategies"
-              :key="strategy.name"
-              :label="strategy.name"
-              :value="strategy.name"
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-popover
+              :visible="strategyPopoverVisible"
+              placement="bottom-start"
+              :width="400"
+              trigger="click"
+              @show="handlePopoverShow"
+              @hide="handlePopoverHide"
             >
-              <div>
-                <div>{{ strategy.name }}</div>
-                <div style="font-size: 12px; color: #909399">{{ strategy.description }}</div>
+              <template #reference>
+                <div class="custom-select" @click="strategyPopoverVisible = !strategyPopoverVisible">
+                  <span v-if="compareForm.strategy_names.length === 0" class="placeholder">
+                    请选择至少两个策略
+                  </span>
+                  <span v-else class="selected-text">
+                    已选择 <span class="count">{{ compareForm.strategy_names.length }}</span> 项策略
+                  </span>
+                  <el-icon class="arrow-icon" :class="{ 'is-reverse': strategyPopoverVisible }">
+                    <ArrowDown />
+                  </el-icon>
+                </div>
+              </template>
+              
+              <div class="strategy-selector">
+                <!-- 搜索和操作栏 -->
+                <div class="selector-header">
+                  <el-input
+                    v-model="strategySearchQuery"
+                    placeholder="搜索策略..."
+                    size="small"
+                    clearable
+                    style="flex: 1"
+                  >
+                    <template #prefix>
+                      <el-icon><Search /></el-icon>
+                    </template>
+                  </el-input>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    link
+                    @click="handleToggleAll"
+                  >
+                    {{ compareForm.strategy_names.length === filteredStrategies.length && filteredStrategies.length > 0 ? '全不选' : '全选' }}
+                  </el-button>
+                </div>
+                
+                <!-- 策略列表 -->
+                <div class="strategy-list">
+                  <el-checkbox-group v-model="compareForm.strategy_names" @change="handleStrategiesChange">
+                    <div
+                      v-for="strategy in filteredStrategies"
+                      :key="strategy.name"
+                      class="strategy-item"
+                    >
+                      <el-checkbox :label="strategy.name">
+                        <div class="strategy-info">
+                          <div class="strategy-name">{{ strategy.name }}</div>
+                          <div class="strategy-desc">{{ strategy.description }}</div>
+                        </div>
+                      </el-checkbox>
+                    </div>
+                  </el-checkbox-group>
+                  <div v-if="filteredStrategies.length === 0" class="empty-text">
+                    未找到匹配的策略
+                  </div>
+                </div>
+                
+                <!-- 底部操作栏 -->
+                <div class="selector-footer">
+                  <el-button size="small" @click="strategyPopoverVisible = false">
+                    确定
+                  </el-button>
+                </div>
               </div>
-            </el-option>
-          </el-select>
+            </el-popover>
+          </div>
         </el-form-item>
 
-        <el-form-item label="股票代码" required>
-          <el-autocomplete
-            v-model="compareForm.stock_code"
-            :fetch-suggestions="searchStocks"
-            placeholder="输入股票代码或名称"
-            style="width: 200px"
-            @select="handleStockSelect"
-          >
-            <template #default="{ item }">
-              <div>{{ item.code }} - {{ item.name }}</div>
-            </template>
-          </el-autocomplete>
+        <el-form-item label="股票" required>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <el-dropdown trigger="click" @command="handleFavoriteSelect">
+              <el-button :icon="Collection" circle title="我的收藏" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
+                  <el-dropdown-item 
+                    v-for="fav in favorites" 
+                    :key="fav.id" 
+                    :command="fav"
+                  >
+                    {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+
+            <el-autocomplete
+              v-model="compareForm.stock_code"
+              :fetch-suggestions="searchStocks"
+              placeholder="代码/名称"
+              style="width: 180px"
+              @select="handleStockSelect"
+            >
+              <template #default="{ item }">
+                <span class="stock-code">{{ item.code }}</span>
+                <span class="stock-name">{{ item.name }}</span>
+              </template>
+            </el-autocomplete>
+
+            <el-button 
+              :type="isFavorite ? 'warning' : 'default'" 
+              :icon="isFavorite ? StarFilled : Star" 
+              circle 
+              @click="toggleFavorite"
+              :disabled="!compareForm.stock_code"
+              title="收藏当前股票"
+            />
+          </div>
         </el-form-item>
 
-        <el-form-item label="开始日期">
+        <el-form-item label="时间">
           <el-date-picker
-            v-model="compareForm.start_date"
-            type="date"
-            placeholder="选择开始日期"
-            format="YYYY-MM-DD"
+            v-model="dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
-            style="width: 180px"
-          />
-        </el-form-item>
-
-        <el-form-item label="结束日期">
-          <el-date-picker
-            v-model="compareForm.end_date"
-            type="date"
-            placeholder="选择结束日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-            style="width: 180px"
+            :shortcuts="dateShortcuts"
+            style="width: 260px"
+            @change="handleDateRangeChange"
           />
         </el-form-item>
 
@@ -103,7 +173,7 @@
               label-width="150px"
             >
               <el-form-item
-                v-for="(value, key) in strategyParamsMap[strategyName]"
+                v-for="(_, key) in strategyParamsMap[strategyName]"
                 :key="key"
                 :label="getParameterLabel(key, strategyName)"
               >
@@ -281,9 +351,10 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Picture, Trophy, Download } from '@element-plus/icons-vue'
+import { Search, Picture, Trophy, Download, Collection, Star, StarFilled } from '@element-plus/icons-vue'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
-import { dataAPI, type StockInfo } from '@/api/data'
+import { dataAPI } from '@/api/data'
+import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
 
 const router = useRouter()
@@ -296,6 +367,7 @@ const activeStrategyTab = ref<string>('')
 const activeResultTab = ref<string>('statistics')
 const klineData = ref<ChartData[]>([])
 const stockData = ref<any[]>([])
+const dateRange = ref<[string, string]>(['', ''])
 
 const compareForm = reactive<StrategyCompareRequest>({
   strategy_names: [],
@@ -306,6 +378,14 @@ const compareForm = reactive<StrategyCompareRequest>({
 })
 
 const strategyParamsMap = reactive<Record<string, Record<string, any>>>({})
+
+// 日期快捷选项
+const dateShortcuts = [
+  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
+  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
+  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
+  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
+]
 
 // 默认参数配置
 const defaultParams: Record<string, Record<string, number>> = {
@@ -327,8 +407,90 @@ const loadStrategies = async () => {
   }
 }
 
+
+// 收藏功能
+const favorites = ref<WatchlistItem[]>([])
+const isFavorite = computed(() => {
+  if (!compareForm.stock_code) return false
+  return favorites.value.some(f => f.stock_code === compareForm.stock_code)
+})
+
+const loadFavorites = async () => {
+  try {
+    const res = await watchlistAPI.getWatchlist()
+    favorites.value = res
+  } catch (e) {
+    console.error('加载收藏列表失败', e)
+  }
+}
+
+const toggleFavorite = async () => {
+  if (!compareForm.stock_code) return
+  try {
+    if (isFavorite.value) {
+      await watchlistAPI.removeFromWatchlist(compareForm.stock_code)
+      ElMessage.success('已取消收藏')
+    } else {
+      await watchlistAPI.addToWatchlist(compareForm.stock_code)
+      ElMessage.success('已收藏')
+    }
+    loadFavorites()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
+}
+
+const handleFavoriteSelect = (fav: WatchlistItem) => {
+  compareForm.stock_code = fav.stock_code
+}
+
+// 策略选择器状态
+const strategyPopoverVisible = ref(false)
+const strategySearchQuery = ref('')
+
+// 过滤后的策略列表
+const filteredStrategies = computed(() => {
+  if (!strategySearchQuery.value) {
+    return strategies.value
+  }
+  const query = strategySearchQuery.value.toLowerCase()
+  return strategies.value.filter(s => 
+    s.name.toLowerCase().includes(query) || 
+    s.description.toLowerCase().includes(query)
+  )
+})
+
+// 处理全选/全不选
+const handleToggleAll = () => {
+  const allFilteredNames = filteredStrategies.value.map(s => s.name)
+  const allSelected = allFilteredNames.every(name => compareForm.strategy_names.includes(name))
+  
+  if (allSelected) {
+    // 全不选：移除所有过滤后的策略
+    compareForm.strategy_names = compareForm.strategy_names.filter(
+      name => !allFilteredNames.includes(name)
+    )
+  } else {
+    // 全选：添加所有过滤后的策略（去重）
+    const newNames = new Set([...compareForm.strategy_names, ...allFilteredNames])
+    compareForm.strategy_names = Array.from(newNames)
+  }
+  handleStrategiesChange(compareForm.strategy_names)
+}
+
+// Popover 显示/隐藏处理
+const handlePopoverShow = () => {
+  strategySearchQuery.value = ''
+}
+
+const handlePopoverHide = () => {
+  strategySearchQuery.value = ''
+}
+
 // 策略变更处理
 const handleStrategiesChange = async (strategyNames: string[]) => {
+  compareForm.strategy_names = strategyNames
+  
   // 清除之前的参数
   Object.keys(strategyParamsMap).forEach((key) => {
     if (!strategyNames.includes(key)) {
@@ -400,6 +562,17 @@ const handleStockSelect = (item: { code: string; name: string }) => {
   compareForm.stock_code = item.code
 }
 
+// 日期范围变更处理
+const handleDateRangeChange = (val: any) => {
+  if (!val) {
+    compareForm.start_date = ''
+    compareForm.end_date = ''
+  } else {
+    compareForm.start_date = val[0]
+    compareForm.end_date = val[1]
+  }
+}
+
 // 执行比较
 const handleCompare = async () => {
   if (compareForm.strategy_names.length < 2) {
@@ -451,6 +624,7 @@ const handleReset = () => {
   compareForm.start_date = ''
   compareForm.end_date = ''
   compareForm.strategy_params = {}
+  dateRange.value = ['', '']
   Object.keys(strategyParamsMap).forEach((key) => delete strategyParamsMap[key])
   compareResult.value = null
   activeStrategyTab.value = ''
@@ -459,6 +633,10 @@ const handleReset = () => {
   const end = new Date()
   const start = new Date()
   start.setDate(start.getDate() - 30)
+  dateRange.value = [
+    start.toISOString().split('T')[0],
+    end.toISOString().split('T')[0]
+  ]
   compareForm.end_date = end.toISOString().split('T')[0]
   compareForm.start_date = start.toISOString().split('T')[0]
 }
@@ -771,7 +949,6 @@ const equityLines = computed<LineData[]>(() => {
         data: equityData,
         color: color,
         lineWidth: 2,
-        priceScaleId: 'right',
       })
     }
   })
@@ -825,11 +1002,16 @@ const handleExportReport = () => {
 
 onMounted(() => {
   loadStrategies()
+  loadFavorites()
 
   // 设置默认日期（最近30天）
   const end = new Date()
   const start = new Date()
   start.setDate(start.getDate() - 30)
+  dateRange.value = [
+    start.toISOString().split('T')[0],
+    end.toISOString().split('T')[0]
+  ]
   compareForm.end_date = end.toISOString().split('T')[0]
   compareForm.start_date = start.toISOString().split('T')[0]
 })
@@ -837,7 +1019,21 @@ onMounted(() => {
 
 <style scoped>
 .strategy-compare {
-  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 15px;
+}
+
+.control-panel {
+  flex-shrink: 0;
+}
+
+.control-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .card-header {
@@ -903,5 +1099,204 @@ onMounted(() => {
   height: 16px;
   border-radius: 2px;
   display: inline-block;
+}
+
+.stock-code {
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.stock-name {
+  color: #909399;
+  font-size: 12px;
+}
+
+/* 自定义选择框 */
+.custom-select {
+  width: 300px;
+  height: 32px;
+  padding: 0 30px 0 12px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #4c4d4f;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background-color: #1d1e1f;
+}
+
+.custom-select:hover {
+  border-color: #606266;
+  background-color: #262727;
+}
+
+.custom-select .placeholder {
+  color: #6c6e72;
+  font-size: 14px;
+}
+
+.custom-select .selected-text {
+  color: #a8abb2;
+  font-size: 14px;
+}
+
+.custom-select .selected-text .count {
+  color: #409eff;
+  font-weight: 500;
+  margin: 0 3px;
+}
+
+.custom-select .arrow-icon {
+  position: absolute;
+  right: 10px;
+  transition: transform 0.3s;
+  color: #909399;
+}
+
+.custom-select .arrow-icon.is-reverse {
+  transform: rotate(180deg);
+  color: #409eff;
+}
+
+/* 策略选择器弹出层 */
+.strategy-selector {
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+  background-color: #262727;
+  border-radius: 4px;
+}
+
+.selector-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid #3a3a3c;
+}
+
+.selector-header :deep(.el-input__wrapper) {
+  background-color: #1d1e1f;
+  box-shadow: 0 0 0 1px #4c4d4f inset;
+}
+
+.selector-header :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #606266 inset;
+}
+
+.selector-header :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px #409eff inset !important;
+}
+
+.selector-header :deep(.el-input__inner) {
+  color: #a8abb2;
+}
+
+.selector-header :deep(.el-input__inner::placeholder) {
+  color: #6c6e72;
+}
+
+.selector-header :deep(.el-icon) {
+  color: #909399;
+}
+
+.strategy-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  max-height: 300px;
+}
+
+.strategy-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.strategy-list::-webkit-scrollbar-thumb {
+  background-color: #4c4d4f;
+  border-radius: 3px;
+}
+
+.strategy-list::-webkit-scrollbar-thumb:hover {
+  background-color: #606266;
+}
+
+.strategy-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.strategy-item:hover {
+  background-color: #2d2d2d;
+}
+
+.strategy-item :deep(.el-checkbox) {
+  width: 100%;
+  height: auto;
+}
+
+.strategy-item :deep(.el-checkbox__label) {
+  width: 100%;
+  white-space: normal;
+  line-height: 1.4;
+  color: #a8abb2;
+}
+
+.strategy-item :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+  background-color: #409eff;
+  border-color: #409eff;
+}
+
+.strategy-item :deep(.el-checkbox__inner) {
+  background-color: #1d1e1f;
+  border-color: #4c4d4f;
+}
+
+.strategy-item :deep(.el-checkbox__inner:hover) {
+  border-color: #409eff;
+}
+
+.strategy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.strategy-name {
+  font-size: 14px;
+  color: #e5eaf3;
+  font-weight: 500;
+}
+
+.strategy-desc {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.3;
+}
+
+.empty-text {
+  text-align: center;
+  padding: 20px;
+  color: #6c6e72;
+  font-size: 14px;
+}
+
+.selector-footer {
+  padding: 8px 12px;
+  border-top: 1px solid #3a3a3c;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.selector-footer :deep(.el-button) {
+  background-color: #409eff;
+  border-color: #409eff;
+  color: #fff;
+}
+
+.selector-footer :deep(.el-button:hover) {
+  background-color: #66b1ff;
+  border-color: #66b1ff;
 }
 </style>
