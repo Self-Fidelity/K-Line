@@ -4,6 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.api.auth import get_current_user_id
+from typing import Dict, Any, List
+from pydantic import BaseModel
 from backend.app.models.strategy import (
     StrategyListResponse,
     StrategyInfo,
@@ -16,6 +18,27 @@ from backend.app.services.strategy_service import StrategyService
 
 router = APIRouter()
 strategy_service = StrategyService()
+
+class SaveParamsRequest(BaseModel):
+    stock_code: str
+    strategy_name: str
+    params: Dict[str, Any]
+
+class OptimizeRequest(BaseModel):
+    stock_code: str
+    strategy_name: str
+    start_date: str = None
+    end_date: str = None
+    param_ranges: Dict[str, Any]  # e.g. {"short_period": [2, 20], "long_period": [20, 100]}
+    method: str = "pso"
+    target_metric: str = "sharpe_ratio"
+    num_particles: int = 10
+    max_iter: int = 10
+
+class OptimizeResponse(BaseModel):
+    best_params: Dict[str, Any]
+    best_score: float
+    method: str
 
 
 @router.get("/list", response_model=StrategyListResponse)
@@ -160,17 +183,57 @@ async def compare_strategies(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"策略比较失败: {str(e)}",
         )
+
+
+@router.post("/params/save")
+async def save_strategy_params(
+    request: SaveParamsRequest,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
+):
+    """保存策略参数"""
     try:
-        result = strategy_service.compare(
-            strategy_names=request.strategy_names,
+        success = strategy_service.save_strategy_params(
             stock_code=request.stock_code,
+            strategy_name=request.strategy_name,
+            params=request.params
+        )
+        if not success:
+            raise HTTPException(status_code=500, detail="保存失败")
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/params/{stock_code}/{strategy_name}")
+async def get_strategy_params(
+    stock_code: str,
+    strategy_name: str,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
+):
+    """获取策略参数"""
+    try:
+        params = strategy_service.get_strategy_params(stock_code, strategy_name)
+        return {"params": params}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/optimize", response_model=OptimizeResponse)
+async def optimize_strategy(
+    request: OptimizeRequest,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
+):
+    """优化策略参数"""
+    try:
+        result = strategy_service.optimize_strategy(
+            stock_code=request.stock_code,
+            strategy_name=request.strategy_name,
             start_date=request.start_date,
             end_date=request.end_date,
-            **request.strategy_params,
+            param_ranges=request.param_ranges,
+            method=request.method,
+            target_metric=request.target_metric,
+            num_particles=request.num_particles,
+            max_iter=request.max_iter
         )
-        return StrategyCompareResponse(**result)
+        return OptimizeResponse(**result)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"策略比较失败: {str(e)}",
-        )
+        raise HTTPException(status_code=500, detail=str(e))

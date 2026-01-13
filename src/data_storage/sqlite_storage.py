@@ -72,6 +72,18 @@ class SQLiteStorage(DataStorage):
                 CREATE INDEX IF NOT EXISTS idx_stock_date 
                 ON stock_daily_kline(stock_code, trade_date)
             """)
+
+            # 创建策略参数表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS stock_strategy_params (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    stock_code TEXT NOT NULL,
+                    strategy_name TEXT NOT NULL,
+                    params TEXT NOT NULL,
+                    update_time TEXT NOT NULL,
+                    UNIQUE(stock_code, strategy_name)
+                )
+            """)
             
             conn.commit()
             logger.info(f"数据库初始化完成: {self.database_path}")
@@ -295,5 +307,76 @@ class SQLiteStorage(DataStorage):
         except Exception as e:
             logger.error(f"获取所有股票代码失败: {e}", exc_info=True)
             return []
+        finally:
+            conn.close()
+
+    def save_strategy_params(
+        self,
+        stock_code: str,
+        strategy_name: str,
+        params: str,
+    ) -> bool:
+        """
+        保存策略参数
+
+        Args:
+            stock_code: 股票代码
+            strategy_name: 策略名称
+            params: 参数 JSON 字符串
+
+        Returns:
+            是否保存成功
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            sql = """
+                INSERT OR REPLACE INTO stock_strategy_params
+                (stock_code, strategy_name, params, update_time)
+                VALUES (?, ?, ?, ?)
+            """
+
+            cursor.execute(sql, (stock_code, strategy_name, params, update_time))
+            conn.commit()
+            logger.info(f"保存股票 {stock_code} 的 {strategy_name} 策略参数成功")
+            return True
+
+        except Exception as e:
+            logger.error(f"保存策略参数失败: {e}", exc_info=True)
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_strategy_params(
+        self,
+        stock_code: str,
+        strategy_name: str,
+    ) -> Optional[str]:
+        """
+        获取策略参数
+
+        Args:
+            stock_code: 股票代码
+            strategy_name: 策略名称
+
+        Returns:
+            参数 JSON 字符串，如果不存在返回 None
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT params FROM stock_strategy_params WHERE stock_code = ? AND strategy_name = ?",
+                (stock_code, strategy_name),
+            )
+            result = cursor.fetchone()
+            return result["params"] if result else None
+
+        except Exception as e:
+            logger.error(f"获取策略参数失败: {e}", exc_info=True)
+            return None
         finally:
             conn.close()

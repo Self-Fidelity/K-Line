@@ -70,6 +70,12 @@ const routes: RouteRecordRaw[] = [
             component: () => import('@/views/CustomStrategy.vue'),
             meta: { requiresAuth: true, title: '自定义策略' },
           },
+          {
+            path: 'optimize',
+            name: 'StrategyOptimization',
+            component: () => import('@/views/StrategyOptimization.vue'),
+            meta: { requiresAuth: true, title: '策略优化' },
+          },
         ]
       },
       // K-Line Review

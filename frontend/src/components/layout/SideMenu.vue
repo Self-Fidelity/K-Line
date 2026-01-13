@@ -34,6 +34,7 @@
         <el-menu-item index="/strategy/compare">策略对比</el-menu-item>
         <el-menu-item index="/strategy/batch">批量扫描</el-menu-item>
         <el-menu-item index="/strategy/custom">自定义策略</el-menu-item>
+        <el-menu-item index="/strategy/optimize">参数优化</el-menu-item>
       </el-sub-menu>
 
       <el-menu-item index="/chart">

@@ -126,4 +126,45 @@ export const strategyAPI = {
     const response = await apiClient.post<StrategyCompareResponse>('/api/strategy/compare', request)
     return response.data
   },
+
+  saveParams: async (stockCode: string, strategyName: string, params: Record<string, any>) => {
+    const response = await apiClient.post('/api/strategy/params/save', {
+      stock_code: stockCode,
+      strategy_name: strategyName,
+      params,
+    })
+    return response.data
+  },
+
+  getParams: async (stockCode: string, strategyName: string): Promise<Record<string, any> | null> => {
+    const response = await apiClient.get<{ params: Record<string, any> | null }>(
+      `/api/strategy/params/${stockCode}/${strategyName}`
+    )
+    return response.data.params
+  },
+
+  optimizeStrategy: async (
+    stockCode: string,
+    strategyName: string,
+    paramRanges: Record<string, any[]>,
+    startDate?: string,
+    endDate?: string,
+    targetMetric = 'sharpe_ratio',
+    method = 'pso',
+    numParticles = 10,
+    maxIter = 20
+  ) => {
+    const response = await apiClient.post('/api/strategy/optimize', {
+      stock_code: stockCode,
+      strategy_name: strategyName,
+      param_ranges: paramRanges,
+      start_date: startDate,
+      end_date: endDate,
+      target_metric: targetMetric,
+      method,
+      num_particles: numParticles,
+      max_iter: maxIter,
+    })
+    return response.data
+  },
 }

@@ -12,8 +12,11 @@ sys.path.insert(0, str(src_dir))
 
 from src.strategy.manager import StrategyManager
 from src.strategy.statistics import StrategyStatistics
+from src.strategy.optimization import Optimizer
+from src.data_storage.sqlite_storage import SQLiteStorage
 from src.utils.logger import get_logger
 from backend.app.services.custom_strategy_service import CustomStrategyService
+import json
 
 logger = get_logger(__name__)
 
@@ -26,6 +29,7 @@ class StrategyService:
         self.strategy_manager = StrategyManager()
         self.statistics = StrategyStatistics()
         self.custom_strategy_service = CustomStrategyService()
+        self.storage = SQLiteStorage()
     
     def list_strategies(self, user_id: Optional[int] = None) -> List[Dict]:
         """
@@ -384,3 +388,66 @@ class StrategyService:
             "end_date": end_date,
             "results": results,
         }
+
+    def save_strategy_params(self, stock_code: str, strategy_name: str, params: Dict[str, Any]) -> bool:
+        """保存策略参数"""
+        try:
+            params_str = json.dumps(params)
+            return self.storage.save_strategy_params(stock_code, strategy_name, params_str)
+        except Exception as e:
+            logger.error(f"保存策略参数失败: {e}", exc_info=True)
+            return False
+
+    def get_strategy_params(self, stock_code: str, strategy_name: str) -> Optional[Dict[str, Any]]:
+        """获取策略参数"""
+        try:
+            params_str = self.storage.get_strategy_params(stock_code, strategy_name)
+            if params_str:
+                return json.loads(params_str)
+            return None
+        except Exception as e:
+            logger.error(f"获取策略参数失败: {e}", exc_info=True)
+            return None
+
+    def optimize_strategy(
+        self,
+        stock_code: str,
+        strategy_name: str,
+        param_ranges: Dict[str, List[Any]],
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        method: str = "pso",
+        target_metric: str = "sharpe_ratio",
+        num_particles: int = 10,
+        max_iter: int = 20
+    ) -> Dict[str, Any]:
+        """优化策略参数"""
+
+        # 获取数据
+        from backend.app.services.data_service import DataService
+        data_service = DataService()
+        data = data_service.get_kline_data(stock_code, start_date=start_date, end_date=end_date)
+        if data.empty:
+            raise ValueError(f"股票 {stock_code} 数据为空")
+
+        optimizer = Optimizer(strategy_name, data)
+
+        # Parse ranges for PSO: [min, max] -> (min, max, type)
+        bounds = {}
+        for key, val in param_ranges.items():
+            if isinstance(val, list) and len(val) == 2:
+                # 简单推断类型：如果都是整数且策略默认也是整数
+                # 这里简化：只要输入是整数就按整数优化
+                is_int = isinstance(val[0], int) and isinstance(val[1], int)
+                bounds[key] = (val[0], val[1], int if is_int else float)
+
+        if method == "pso":
+            return optimizer.optimize_pso(
+                bounds,
+                num_particles=num_particles,
+                max_iter=max_iter,
+                target_metric=target_metric
+            )
+        else:
+            # 默认使用 grid (如果以后实现)
+            raise ValueError("只支持 pso 优化方法")

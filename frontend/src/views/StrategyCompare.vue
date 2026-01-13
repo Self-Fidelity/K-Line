@@ -164,6 +164,14 @@
           :name="strategyName"
         >
           <div v-if="strategyParamsMap[strategyName]">
+             <div class="params-header">
+               <el-button size="small" type="primary" link @click="saveParams(strategyName)">
+                 <el-icon><Check /></el-icon> 保存当前参数
+               </el-button>
+               <el-button size="small" type="success" link @click="openOptimizeDialog(strategyName)">
+                 <el-icon><Setting /></el-icon> 智能参数优化
+               </el-button>
+             </div>
             <p v-if="Object.keys(strategyParamsMap[strategyName]).length === 0" style="color: #909399">
               该策略无需额外参数配置
             </p>
@@ -198,6 +206,39 @@
         请先选择策略
       </div>
     </el-card>
+
+    <!-- 优化对话框 -->
+    <el-dialog
+      v-model="optimizeDialogVisible"
+      title="参数优化 (PSO)"
+      width="500px"
+    >
+      <el-form label-width="120px">
+        <el-form-item label="粒子数量">
+          <el-input-number v-model="optimizeForm.num_particles" :min="5" :max="50" />
+        </el-form-item>
+        <el-form-item label="迭代次数">
+          <el-input-number v-model="optimizeForm.max_iter" :min="5" :max="100" />
+        </el-form-item>
+        <div class="ranges-config">
+          <p>参数范围配置:</p>
+          <div v-for="(range, key) in optimizeForm.param_ranges" :key="key" class="range-item">
+            <span>{{ getParameterLabel(key, currentOptimizingStrategy) }}</span>
+            <el-input-number v-model="range[0]" size="small" style="width: 100px" placeholder="Min" />
+            <span>-</span>
+            <el-input-number v-model="range[1]" size="small" style="width: 100px" placeholder="Max" />
+          </div>
+        </div>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="optimizeDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleOptimize" :loading="optimizing">
+            开始优化
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
 
     <!-- 比较结果 -->
     <el-card v-if="compareResult" style="margin-top: 20px">
@@ -351,7 +392,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Picture, Trophy, Download, Collection, Star, StarFilled } from '@element-plus/icons-vue'
+import { Search, Picture, Trophy, Download, Collection, Star, StarFilled, Setting, Check } from '@element-plus/icons-vue'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
@@ -378,6 +419,14 @@ const compareForm = reactive<StrategyCompareRequest>({
 })
 
 const strategyParamsMap = reactive<Record<string, Record<string, any>>>({})
+const optimizing = ref(false)
+const optimizeDialogVisible = ref(false)
+const currentOptimizingStrategy = ref('')
+const optimizeForm = reactive({
+  param_ranges: {} as Record<string, any[]>,
+  num_particles: 10,
+  max_iter: 10
+})
 
 // 日期快捷选项
 const dateShortcuts = [
@@ -511,12 +560,30 @@ const handleStrategiesChange = async (strategyNames: string[]) => {
         }
         Object.keys(strategyParamsMap[strategyName]).forEach((key) => delete strategyParamsMap[strategyName][key])
 
+        // 尝试加载保存的参数
+        try {
+          if (compareForm.stock_code) {
+             const savedParams = await strategyAPI.getParams(compareForm.stock_code, strategyName)
+             if (savedParams) {
+               Object.assign(strategyParamsMap[strategyName], savedParams)
+               continue
+             }
+          }
+        } catch (e) { console.error(e) }
+
         // 设置默认参数
         if (defaultParams[strategyName]) {
           Object.assign(strategyParamsMap[strategyName], defaultParams[strategyName])
         } else if (info.parameter_descriptions) {
-          for (const [key] of Object.entries(info.parameter_descriptions)) {
-            strategyParamsMap[strategyName][key] = 1
+          // 自定义策略或无默认配置
+          for (const [key, desc] of Object.entries(info.parameter_descriptions)) {
+            // 简单解析默认值
+             let defVal = 1
+             if (typeof desc === 'string' && desc.includes('默认')) {
+                const match = desc.match(/默认[:\s]*([0-9.]+)/)
+                if (match) defVal = parseFloat(match[1])
+             }
+            strategyParamsMap[strategyName][key] = defVal
           }
         }
 
@@ -560,6 +627,10 @@ const searchStocks = async (queryString: string, cb: (results: any[]) => void) =
 // 股票选择
 const handleStockSelect = (item: { code: string; name: string }) => {
   compareForm.stock_code = item.code
+  // Reload params for selected strategies if stock changes
+  if (compareForm.strategy_names.length > 0) {
+      handleStrategiesChange(compareForm.strategy_names)
+  }
 }
 
 // 日期范围变更处理
@@ -657,6 +728,62 @@ const handleViewChart = () => {
       },
     })
   }
+}
+
+// 保存参数
+const saveParams = async (strategyName: string) => {
+    if (!compareForm.stock_code) {
+        ElMessage.warning('请先选择股票')
+        return
+    }
+    try {
+        await strategyAPI.saveParams(compareForm.stock_code, strategyName, strategyParamsMap[strategyName])
+        ElMessage.success('参数保存成功')
+    } catch (e: any) {
+        ElMessage.error('参数保存失败: ' + e.message)
+    }
+}
+
+// 打开优化对话框
+const openOptimizeDialog = (strategyName: string) => {
+    if (!compareForm.stock_code) {
+        ElMessage.warning('请先选择股票')
+        return
+    }
+    currentOptimizingStrategy.value = strategyName
+
+    // 初始化范围
+    optimizeForm.param_ranges = {}
+    const currentParams = strategyParamsMap[strategyName]
+    for (const key in currentParams) {
+        const val = currentParams[key]
+        // 默认范围：0.5x ~ 2.0x
+        optimizeForm.param_ranges[key] = [Math.floor(val * 0.5) || 1, Math.ceil(val * 2.0) || 10]
+    }
+
+    optimizeDialogVisible.value = true
+}
+
+// 执行优化
+const handleOptimize = async () => {
+    optimizing.value = true
+    try {
+        const res = await strategyAPI.optimizeStrategy(
+            compareForm.stock_code,
+            currentOptimizingStrategy.value,
+            optimizeForm.param_ranges,
+            'pso'
+        )
+
+        // 应用最佳参数
+        Object.assign(strategyParamsMap[currentOptimizingStrategy.value], res.best_params)
+        ElMessage.success(`优化完成! 最佳得分(夏普): ${res.best_score.toFixed(3)}`)
+        optimizeDialogVisible.value = false
+    } catch (e: any) {
+        ElMessage.error('优化失败: ' + e.message)
+    } finally {
+        optimizing.value = false
+    }
 }
 
 // 格式化统计值
@@ -1059,6 +1186,20 @@ onMounted(() => {
   color: #909399;
   margin-top: 5px;
   line-height: 1.5;
+}
+
+.params-header {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.range-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
 }
 
 .chart-section {
