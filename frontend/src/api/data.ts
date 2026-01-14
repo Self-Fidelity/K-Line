@@ -23,6 +23,10 @@ export interface KlineData {
   high: number
   low: number
   volume: number
+  pct_chg?: number
+  amount?: number
+  change?: number
+  turnover?: number
 }
 
 export const dataAPI = {

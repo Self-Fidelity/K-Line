@@ -471,7 +471,8 @@ const updateData = (fitContent = false) => {
         // 使用requestAnimationFrame确保在数据设置后的下一帧调用fitContent
         // 这样可以避免闪烁，让图表在绘制时就直接占满画布
         requestAnimationFrame(() => {
-            if (mainChart && props.data.length > 0) {
+            // 只要有数据或有线图数据，就调用fitContent
+            if (mainChart && (props.data.length > 0 || props.lines.length > 0)) {
                 mainChart.timeScale().fitContent();
             }
         });
@@ -485,7 +486,21 @@ watch(() => props.data, () => {
         updateData(true);
         // 使用requestAnimationFrame确保在下一帧渲染时调用fitContent，避免闪烁
         requestAnimationFrame(() => {
-            if (mainChart && props.data.length > 0) {
+            if (mainChart && (props.data.length > 0 || props.lines.length > 0)) {
+                mainChart.timeScale().fitContent();
+            }
+        });
+    }
+}, { deep: true });
+
+// 监听 lines 变化（用于纯线图场景，如收益率曲线）
+watch(() => props.lines, () => {
+    if (!mainChart) initCharts();
+    else {
+        updateData(true);
+        // 使用requestAnimationFrame确保在下一帧渲染时调用fitContent，避免闪烁
+        requestAnimationFrame(() => {
+            if (mainChart && (props.data.length > 0 || props.lines.length > 0)) {
                 mainChart.timeScale().fitContent();
             }
         });
@@ -494,7 +509,7 @@ watch(() => props.data, () => {
 
 // 暴露fitContent方法供父组件调用
 const fitContent = () => {
-    if (mainChart && props.data.length > 0) {
+    if (mainChart && (props.data.length > 0 || props.lines.length > 0)) {
         mainChart.timeScale().fitContent();
     }
 };

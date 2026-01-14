@@ -59,7 +59,7 @@
                       :key="strategy.name"
                       class="strategy-item"
                     >
-                      <el-checkbox :label="strategy.name">
+                      <el-checkbox :value="strategy.name">
                         <div class="strategy-info">
                           <div class="strategy-name">{{ strategy.name }}</div>
                           <div class="strategy-desc">{{ strategy.description }}</div>
@@ -317,43 +317,75 @@
                   </span>
                 </template>
               </el-table-column>
+              <el-table-column prop="annual_return" label="年化收益" width="110" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'annual_return')">
+                    <el-icon v-if="getBestValue('annual_return') === row.annual_return" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.annual_return, 'annual_return') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="sharpe_ratio" label="夏普比率" width="110" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'sharpe_ratio')">
+                    <el-icon v-if="getBestValue('sharpe_ratio') === row.sharpe_ratio" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.sharpe_ratio, 'sharpe_ratio') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="sortino_ratio" label="索提诺比率" width="120" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'sortino_ratio')">
+                    <el-icon v-if="getBestValue('sortino_ratio') === row.sortino_ratio" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.sortino_ratio, 'sortino_ratio') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="pl_ratio" label="盈亏比" width="100" align="right" sortable>
+                <template #default="{ row }">
+                  <span :style="getStatValueStyle(row, 'pl_ratio')">
+                    <el-icon v-if="getBestValue('pl_ratio') === row.pl_ratio" style="margin-right: 4px;">
+                      <Trophy />
+                    </el-icon>
+                    {{ formatStatValue(row.pl_ratio, 'pl_ratio') }}
+                  </span>
+                </template>
+              </el-table-column>
               <el-table-column prop="total_trades" label="总交易次数" width="120" align="right" sortable>
                 <template #default="{ row }">{{ formatStatValue(row.total_trades, 'total_trades') }}</template>
               </el-table-column>
               <el-table-column prop="profitable_trades" label="盈利交易" width="120" align="right" sortable>
                 <template #default="{ row }">{{ formatStatValue(row.profitable_trades, 'profitable_trades') }}</template>
               </el-table-column>
-              <el-table-column prop="final_capital" label="最终资金" width="120" align="right" sortable>
-                <template #default="{ row }">
-                  {{ formatStatValue(row.final_capital, 'final_capital') }}
-                </template>
-              </el-table-column>
             </el-table>
           </div>
         </el-tab-pane>
 
-        <!-- 收益率曲线对比标签页 -->
-        <el-tab-pane label="收益率曲线对比" name="equity">
-          <div v-if="compareResult.results && compareResult.results.length > 0" class="chart-section">
-            <KlineChart
-              :data="klineData"
-              :lines="equityLines"
-              :height="400"
-              :key="`equity-${compareResult.stock_code}`"
-            />
-          </div>
-        </el-tab-pane>
-
         <!-- K线图对比标签页 -->
-        <el-tab-pane label="K线图对比" name="kline">
+        <el-tab-pane label="K线图 & 信号" name="kline">
           <div v-if="compareResult.results && compareResult.results.length > 0" class="chart-section">
+            <div v-if="klineData.length === 0" class="empty-chart">
+              <el-empty description="暂无K线数据" />
+            </div>
             <KlineChart
+              v-else
               :data="klineData"
               :markers="combinedMarkers"
               :lines="strategyLines"
-              :height="500"
-              :key="`kline-${compareResult.stock_code}`"
+              :height="600"
+              :watermark="stockName"
+              :darkMode="isDark"
+              :showSubChart="false"
+              :simpleLegend="true"
+              :key="`kline-${compareResult.stock_code}-${Date.now()}`"
             />
+            <!-- 策略信号图例 -->
             <div class="marker-legend" v-if="combinedMarkers.length > 0">
               <div class="legend-title">策略信号图例：</div>
               <div class="legend-items">
@@ -362,14 +394,31 @@
                   :key="strategy.strategy_name"
                   class="legend-item"
                 >
-                  <span
-                    class="legend-color"
-                    :style="{ backgroundColor: getStrategyColor(index) }"
-                  ></span>
-                  <span>{{ strategy.strategy_name }}</span>
+                  <span class="legend-color" :style="{ backgroundColor: getStrategyColor(index) }"></span>
+                  <span class="legend-label">{{ strategy.strategy_name }}</span>
                 </div>
               </div>
             </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 收益率曲线对比标签页 -->
+        <el-tab-pane label="收益率曲线" name="equity">
+          <div v-if="compareResult.results && compareResult.results.length > 0" class="chart-section">
+            <div v-if="equityLines.length === 0" class="empty-chart">
+              <el-empty description="暂无权益曲线数据" />
+            </div>
+            <KlineChart
+              v-else
+              :data="[]"
+              :lines="equityLines"
+              :height="500"
+              :watermark="`${compareResult.stock_code} 策略对比`"
+              :darkMode="isDark"
+              :showSubChart="false"
+              :simpleLegend="true"
+              :key="`equity-${compareResult.stock_code}-${Date.now()}`"
+            />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -393,22 +442,25 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Picture, Trophy, Download, Collection, Star, StarFilled, Setting, Check } from '@element-plus/icons-vue'
+import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
 
 const router = useRouter()
+const isDark = useDark()
 
 const strategies = ref<StrategyInfo[]>([])
 const comparing = ref(false)
 const compareResult = ref<StrategyCompareResponse | null>(null)
 const strategyInfoMap = ref<Record<string, StrategyInfo>>({})
 const activeStrategyTab = ref<string>('')
-const activeResultTab = ref<string>('statistics')
+const activeResultTab = ref<string>('statistics') // statistics, kline, equity
 const klineData = ref<ChartData[]>([])
 const stockData = ref<any[]>([])
 const dateRange = ref<[string, string]>(['', ''])
+const stockName = ref<string>('')
 
 const compareForm = reactive<StrategyCompareRequest>({
   strategy_names: [],
@@ -797,14 +849,15 @@ const formatStatValue = (value: any, key: string): string => {
   }
   
   // 百分比类型
-  const percentKeys = ['cumulative_return', 'win_rate', 'max_drawdown']
+  const percentKeys = ['cumulative_return', 'win_rate', 'max_drawdown', 'annual_return']
   if (percentKeys.includes(key)) {
     return `${Number(value).toFixed(2)}%`
   }
   
-  // 金额类型
-  if (key === 'final_capital') {
-    return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // 比率类型（保留3位小数）
+  const ratioKeys = ['sharpe_ratio', 'sortino_ratio', 'pl_ratio']
+  if (ratioKeys.includes(key)) {
+    return Number(value).toFixed(3)
   }
   
   return String(value)
@@ -815,28 +868,40 @@ const getStatValueStyle = (row: any, key: string): Record<string, string> => {
   const value = row[key]
   if (value === null || value === undefined) return {}
   
-  if (key === 'cumulative_return') {
-    const isBest = getBestValue('cumulative_return') === value
+  const isBest = getBestValue(key) === value
+  
+  // 收益类指标（越高越好）
+  if (['cumulative_return', 'annual_return'].includes(key)) {
     return {
       color: value >= 0 ? '#f56c6c' : '#67c23a',
       fontWeight: isBest ? 'bold' : 'normal',
     }
   }
+  
+  // 胜率（越高越好）
   if (key === 'win_rate') {
-    const isBest = getBestValue('win_rate') === value
     return {
       color: value >= 50 ? '#f56c6c' : '#909399',
       fontWeight: isBest ? 'bold' : 'normal',
     }
   }
+  
+  // 最大回撤（越小越好，绝对值）
   if (key === 'max_drawdown') {
-    const isBest = getBestValue('max_drawdown') === value
-    // 最大回撤越小越好（绝对值）
     return {
       color: Math.abs(value) <= 10 ? '#67c23a' : Math.abs(value) <= 20 ? '#e6a23c' : '#f56c6c',
       fontWeight: isBest ? 'bold' : 'normal',
     }
   }
+  
+  // 比率类指标（越高越好）
+  if (['sharpe_ratio', 'sortino_ratio', 'pl_ratio'].includes(key)) {
+    return {
+      color: value > 1 ? '#f56c6c' : value > 0 ? '#e6a23c' : '#909399',
+      fontWeight: isBest ? 'bold' : 'normal',
+    }
+  }
+  
   return {}
 }
 
@@ -851,11 +916,12 @@ const getBestValue = (key: string): number | null => {
   
   if (values.length === 0) return null
   
+  // 最大回撤越小越好（绝对值）
   if (key === 'max_drawdown') {
-    // 最大回撤越小越好（绝对值）
     return values.reduce((best, current) => Math.abs(current) < Math.abs(best) ? current : best)
-  } else {
-    // 其他指标越大越好
+  } 
+  // 其他所有指标都是越大越好
+  else {
     return Math.max(...values)
   }
 }
@@ -941,6 +1007,14 @@ const loadKlineDataForCompare = async () => {
   if (!compareResult.value || !compareResult.value.stock_code) return
   
   try {
+    // 获取股票信息（包含名称）
+    try {
+      const stockInfo = await dataAPI.getStockInfo(compareResult.value.stock_code)
+      stockName.value = stockInfo.name || compareResult.value.stock_code
+    } catch (e) {
+      stockName.value = compareResult.value.stock_code
+    }
+    
     const response = await dataAPI.getKlineData(
       compareResult.value.stock_code,
       compareResult.value.start_date || undefined,
@@ -949,8 +1023,8 @@ const loadKlineDataForCompare = async () => {
     
     stockData.value = response || []
     
-    // 格式化K线数据
-    klineData.value = (response || []).map((item: any) => {
+    // 格式化K线数据，使用后端返回的涨跌幅
+    const formattedData = (response || []).map((item: any) => {
       let dateStr = item.trade_date || item.date
       if (dateStr && typeof dateStr === 'string' && dateStr.includes('T')) {
         dateStr = dateStr.split('T')[0]
@@ -963,8 +1037,11 @@ const loadKlineDataForCompare = async () => {
         low: Number(item.low) || 0,
         close: Number(item.close) || 0,
         volume: Number(item.volume) || 0,
+        pct_chg: item.pct_chg !== null && item.pct_chg !== undefined ? Number(item.pct_chg) : undefined,
       }
     }).filter((item: ChartData) => item.time)
+    
+    klineData.value = formattedData
   } catch (error: any) {
     console.error('加载K线数据失败:', error)
   }
@@ -997,16 +1074,16 @@ const combinedMarkers = computed<Marker[]>(() => {
           time: dateStr,
           position: 'belowBar',
           color: color,
-          shape: 'arrowUp',
-          text: `${result.strategy_name} 买入`,
+          shape: 'circle',
+          text: 'B',
         })
       } else if (item.signal === -1) {
         markers.push({
           time: dateStr,
           position: 'aboveBar',
           color: color,
-          shape: 'arrowDown',
-          text: `${result.strategy_name} 卖出`,
+          shape: 'circle',
+          text: 'S',
         })
       }
     })
@@ -1146,7 +1223,6 @@ onMounted(() => {
 
 <style scoped>
 .strategy-compare {
-  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 15px;
@@ -1155,6 +1231,27 @@ onMounted(() => {
 
 .control-panel {
   flex-shrink: 0;
+}
+
+/* 确保卡片内容完全展示，不限制高度 */
+.strategy-compare :deep(.el-card__body) {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.strategy-compare :deep(.el-tabs) {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.strategy-compare :deep(.el-tabs__content) {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.strategy-compare :deep(.el-tab-pane) {
+  max-height: none !important;
+  overflow: visible !important;
 }
 
 .control-form {
@@ -1203,36 +1300,63 @@ onMounted(() => {
 }
 
 .chart-section {
-  margin-top: 20px;
   padding: 20px;
-  background: #fafafa;
-  border-radius: 4px;
+  min-height: 500px;
+}
+
+.empty-chart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
 }
 
 .marker-legend {
-  margin-top: 16px;
-  padding: 12px;
-  background: #f5f7fa;
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #1d1e1f;
   border-radius: 4px;
 }
 
 .legend-title {
-  font-weight: 500;
-  margin-bottom: 8px;
-  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5eaf3;
+  margin-bottom: 10px;
 }
 
 .legend-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 20px;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 13px;
+  color: #a8abb2;
+}
+
+.legend-marker {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.marker-text {
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.legend-label {
+  margin-left: 4px;
 }
 
 .legend-color {

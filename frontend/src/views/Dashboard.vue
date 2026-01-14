@@ -3,7 +3,7 @@
     <div class="dashboard-header">
       <div class="header-left">
         <h2>开发者控制台</h2>
-        <p class="subtitle">K-Line Quant v1.0.0</p>
+        <p class="subtitle">K-Line Daily v1.0.0</p>
       </div>
       <div class="header-right">
         <el-tag type="success" effect="dark" round>System Online</el-tag>

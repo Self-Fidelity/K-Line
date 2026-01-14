@@ -5,7 +5,7 @@
         <div class="logo-icon">
           <el-icon><TrendCharts /></el-icon>
         </div>
-        <h2>K-Line Quant</h2>
+        <h2>K-Line Daily</h2>
         <p>On beta Testing</p>
       </div>
       
@@ -57,7 +57,7 @@
       </el-form>
       
       <div class="login-footer">
-        <span>© 2026 K-Line Quant. All rights reserved.</span>
+        <span>© 2026 K-Line Daily. All rights reserved.</span>
       </div>
     </div>
   </div>

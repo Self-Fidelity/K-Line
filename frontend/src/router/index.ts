@@ -99,7 +99,7 @@ router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
   
   // Set document title
-  document.title = `${to.meta.title} - K-Line Quant` || 'K-Line Quant'
+  document.title = `${to.meta.title} - K-Line Daily` || 'K-Line Daily'
 
   if (to.meta.requiresAuth && !token) {
     next('/login')

@@ -5,114 +5,114 @@
       <el-form :inline="true" class="control-form">
         <el-form-item label="股票">
           <div style="display: flex; gap: 5px; align-items: center;">
-            <el-dropdown trigger="click" @command="handleFavoriteSelect">
+         <el-dropdown trigger="click" @command="handleFavoriteSelect">
               <el-button :icon="Collection" circle title="我的收藏" />
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
-                  <el-dropdown-item 
-                    v-for="fav in favorites" 
-                    :key="fav.id" 
-                    :command="fav"
-                  >
-                    {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
+              <el-dropdown-item 
+                v-for="fav in favorites" 
+                :key="fav.id" 
+                :command="fav"
+              >
+                {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
-            <el-autocomplete
-              v-model="searchQuery"
-              :fetch-suggestions="querySearch"
+        <el-autocomplete
+          v-model="searchQuery"
+          :fetch-suggestions="querySearch"
               placeholder="代码/名称"
               style="width: 180px"
-              @select="handleSelect"
-            >
-              <template #default="{ item }">
+          @select="handleSelect"
+        >
+          <template #default="{ item }">
                 <span class="stock-code">{{ item.value }}</span>
                 <span class="stock-name">{{ item.stock.name }}</span>
-              </template>
-            </el-autocomplete>
+          </template>
+        </el-autocomplete>
 
-            <el-button 
-              :type="isFavorite ? 'warning' : 'default'" 
-              :icon="isFavorite ? StarFilled : Star" 
-              circle 
-              @click="toggleFavorite"
-              :disabled="!currentStock"
-              title="收藏当前股票"
-            />
+        <el-button 
+            :type="isFavorite ? 'warning' : 'default'" 
+            :icon="isFavorite ? StarFilled : Star" 
+            circle 
+            @click="toggleFavorite"
+            :disabled="!currentStock"
+            title="收藏当前股票"
+        />
           </div>
         </el-form-item>
 
         <el-form-item label="时间">
-          <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
-            :shortcuts="shortcuts"
+          :shortcuts="shortcuts"
             style="width: 260px"
-            @change="handleDateChange"
-          />
+          @change="handleDateChange"
+        />
         </el-form-item>
 
         <el-form-item label="主图">
           <div style="display: flex; gap: 8px; align-items: center;">
-            <el-popover placement="bottom" trigger="click" width="200">
-              <template #reference>
+          <el-popover placement="bottom" trigger="click" width="200">
+            <template #reference>
                 <el-button size="small" :type="activeMainIndicator === 'MA' ? 'primary' : ''">MA</el-button>
-              </template>
-              <div class="checkbox-list">
-                <el-checkbox v-model="maConfig.ma5" label="MA5" @change="updateLines" />
-                <el-checkbox v-model="maConfig.ma10" label="MA10" @change="updateLines" />
-                <el-checkbox v-model="maConfig.ma20" label="MA20" @change="updateLines" />
-                <el-checkbox v-model="maConfig.ma30" label="MA30" @change="updateLines" />
-                <el-checkbox v-model="maConfig.ma60" label="MA60" @change="updateLines" />
-              </div>
-            </el-popover>
-            
-            <el-tooltip content="清除主图指标" placement="top" :show-after="500">
-              <el-button size="small" circle :icon="Close" @click="clearMainIndicator" />
-            </el-tooltip>
-          </div>
+            </template>
+            <div class="checkbox-list">
+              <el-checkbox v-model="maConfig.ma5" label="MA5" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma10" label="MA10" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma20" label="MA20" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma30" label="MA30" @change="updateLines" />
+              <el-checkbox v-model="maConfig.ma60" label="MA60" @change="updateLines" />
+            </div>
+          </el-popover>
+          
+          <el-tooltip content="清除主图指标" placement="top" :show-after="500">
+             <el-button size="small" circle :icon="Close" @click="clearMainIndicator" />
+          </el-tooltip>
+        </div>
         </el-form-item>
 
         <el-form-item label="副图">
           <div style="display: flex; gap: 8px; align-items: center;">
-            <el-radio-group v-model="selectedSubIndicator" size="small" @change="updateLines">
-              <el-radio-button value="VOL">VOL</el-radio-button>
-              <el-radio-button value="MACD">MACD</el-radio-button>
-              <el-radio-button value="KDJ">KDJ</el-radio-button>
-              <el-radio-button value="RSI">RSI</el-radio-button>
-              <el-radio-button value="WR">WR</el-radio-button>
-              <el-radio-button value="CCI">CCI</el-radio-button>
-              <el-radio-button value="BIAS">BIAS</el-radio-button>
-              <el-radio-button value="OBV">OBV</el-radio-button>
-            </el-radio-group>
-            <el-popover placement="bottom" trigger="hover" width="300">
-              <template #reference>
-                <el-icon class="help-icon"><QuestionFilled /></el-icon>
-              </template>
-              <div class="indicator-help">
-                <div v-if="activeMainIndicator">
-                  <div class="title">{{ indicatorInfo[activeMainIndicator].name }}</div>
-                  <div class="desc">{{ indicatorInfo[activeMainIndicator].desc }}</div>
-                  <el-divider style="margin: 8px 0" />
-                </div>
-                <div class="title">{{ subIndicators[selectedSubIndicator].name }}</div>
-                <div class="desc">{{ subIndicators[selectedSubIndicator].desc }}</div>
-              </div>
-            </el-popover>
+        <el-radio-group v-model="selectedSubIndicator" size="small" @change="updateLines">
+          <el-radio-button value="VOL">VOL</el-radio-button>
+          <el-radio-button value="MACD">MACD</el-radio-button>
+          <el-radio-button value="KDJ">KDJ</el-radio-button>
+          <el-radio-button value="RSI">RSI</el-radio-button>
+          <el-radio-button value="WR">WR</el-radio-button>
+          <el-radio-button value="CCI">CCI</el-radio-button>
+          <el-radio-button value="BIAS">BIAS</el-radio-button>
+          <el-radio-button value="OBV">OBV</el-radio-button>
+        </el-radio-group>
+        <el-popover placement="bottom" trigger="hover" width="300">
+          <template #reference>
+            <el-icon class="help-icon"><QuestionFilled /></el-icon>
+          </template>
+          <div class="indicator-help">
+            <div v-if="activeMainIndicator">
+              <div class="title">{{ indicatorInfo[activeMainIndicator].name }}</div>
+              <div class="desc">{{ indicatorInfo[activeMainIndicator].desc }}</div>
+              <el-divider style="margin: 8px 0" />
+            </div>
+            <div class="title">{{ subIndicators[selectedSubIndicator].name }}</div>
+            <div class="desc">{{ subIndicators[selectedSubIndicator].desc }}</div>
           </div>
+        </el-popover>
+      </div>
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="fetchData" :loading="loading">
-            <el-icon><Refresh /></el-icon> 刷新
-          </el-button>
+         <el-button type="primary" @click="fetchData" :loading="loading">
+           <el-icon><Refresh /></el-icon> 刷新
+         </el-button>
         </el-form-item>
       </el-form>
     </el-card>

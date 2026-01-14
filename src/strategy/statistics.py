@@ -168,6 +168,11 @@ class StrategyStatistics:
             losing_trades = [t for t in trades if t.get('profit_rate', 0) <= 0 and t.get('type') == 'sell']
             avg_loss = np.mean([t['profit_rate'] for t in losing_trades]) if losing_trades else 0
             pl_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else (999.0 if avg_win > 0 else 0.0)
+            
+            # 统计信号数量
+            total_signals = len(df[df['signal'] != 0])
+            buy_signals = len(df[df['signal'] == 1])
+            sell_signals = len(df[df['signal'] == -1])
 
             return {
                 "initial_capital": initial_capital,
@@ -180,6 +185,12 @@ class StrategyStatistics:
                 "win_rate": round(win_rate, 2),
                 "pl_ratio": round(pl_ratio, 2),
                 "total_trades": total_closed_trades,
+                "profitable_trades": len(winning_trades),
+                
+                # 信号统计
+                "total_signals": total_signals,
+                "buy_signals": buy_signals,
+                "sell_signals": sell_signals,
                 
                 "benchmark_return": round(benchmark_return, 2),
                 "benchmark_max_drawdown": round(benchmark_max_dd, 2),
@@ -275,6 +286,10 @@ class StrategyStatistics:
             "win_rate": 0.0,
             "pl_ratio": 0.0,
             "total_trades": 0,
+            "profitable_trades": 0,
+            "total_signals": 0,
+            "buy_signals": 0,
+            "sell_signals": 0,
             "benchmark_return": 0.0,
             "benchmark_max_drawdown": 0.0,
             "equity_curve": [],

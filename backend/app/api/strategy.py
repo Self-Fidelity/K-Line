@@ -171,6 +171,7 @@ async def compare_strategies(
             start_date=request.start_date,
             end_date=request.end_date,
             strategy_params=request.strategy_params,
+            user_id=current_user_id,
         )
         return StrategyCompareResponse(**result)
     except ValueError as e:

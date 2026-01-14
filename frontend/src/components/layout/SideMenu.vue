@@ -1,7 +1,7 @@
 <template>
   <div class="side-menu">
     <div class="logo-container">
-      <h2 v-if="!isCollapse">K-Line Quant</h2>
+      <h2 v-if="!isCollapse">K-Line Daily</h2>
       <h2 v-else>K</h2>
     </div>
     

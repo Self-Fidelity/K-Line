@@ -341,6 +341,7 @@ class StrategyService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         strategy_params: Optional[Dict[str, Dict[str, Any]]] = None,
+        user_id: Optional[int] = None,
     ) -> Dict:
         """
         策略比较分析
@@ -351,6 +352,7 @@ class StrategyService:
             start_date: 开始日期
             end_date: 结束日期
             strategy_params: 各策略的参数（key为策略名称，value为该策略的参数字典）
+            user_id: 用户ID（用于加载用户自定义策略）
         
         Returns:
             比较结果
@@ -372,6 +374,7 @@ class StrategyService:
                     stock_code=stock_code,
                     start_date=start_date,
                     end_date=end_date,
+                    user_id=user_id,
                     **params,
                 )
                 results.append(result)
