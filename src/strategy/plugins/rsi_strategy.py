@@ -110,9 +110,9 @@ class RSIStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        period = kwargs.get("period", self.period)
-        oversold = kwargs.get("oversold", self.oversold)
-        overbought = kwargs.get("overbought", self.overbought)
+        period = int(kwargs.get("period", self.period))
+        oversold = float(kwargs.get("oversold", self.oversold))
+        overbought = float(kwargs.get("overbought", self.overbought))
         
         # 计算RSI
         df["rsi"] = self._calculate_rsi(df["close"], period)

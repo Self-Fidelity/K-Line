@@ -6,7 +6,7 @@
           <el-icon><TrendCharts /></el-icon>
         </div>
         <h2>K-Line Daily</h2>
-        <p>On beta Testing</p>
+        <p>「FX、簡単！」</p>
       </div>
       
       <el-form 

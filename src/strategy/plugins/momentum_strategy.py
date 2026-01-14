@@ -81,7 +81,7 @@ class MomentumStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        period = kwargs.get("period", self.period)
+        period = int(kwargs.get("period", self.period))
         
         # 计算动量（当前价格 - N日前价格）
         df["momentum"] = df["close"] - df["close"].shift(period)

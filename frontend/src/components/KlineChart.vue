@@ -174,6 +174,24 @@ const initCharts = async () => {
         linesLength: props.lines.length
     });
 
+    // Custom price formatter for consistent digit width across all charts
+    const formatPrice = (price: number): string => {
+        const abs = Math.abs(price);
+        const sign = price < 0 ? '-' : '';
+        
+        if (abs >= 1000000) {
+            return sign + (abs / 1000000).toFixed(2) + 'M';
+        } else if (abs >= 1000) {
+            return sign + (abs / 1000).toFixed(2) + 'K';
+        } else if (abs >= 1) {
+            return sign + abs.toFixed(2);
+        } else if (abs > 0) {
+            return sign + abs.toFixed(4);
+        } else {
+            return '0.00';
+        }
+    };
+
     // Chart Config
     const commonOptions = {
     layout: {
@@ -189,9 +207,16 @@ const initCharts = async () => {
             vertLine: { width: 1 as LineWidth, color: props.darkMode ? '#555' : '#9B7DFF', style: 3 },
             horzLine: { width: 1 as LineWidth, color: props.darkMode ? '#555' : '#9B7DFF', style: 3 },
     },
+      leftPriceScale: {
+            visible: false,  // Hide left price scale to ensure consistent layout
+        },
       rightPriceScale: {
             borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc',
             scaleMargins: { top: 0.1, bottom: 0.1 },
+            minimumWidth: 80,  // Increased to accommodate wider volume numbers
+        },
+        localization: {
+            priceFormatter: formatPrice,
         },
     };
 
@@ -233,8 +258,12 @@ const initCharts = async () => {
             ...commonOptions,
       timeScale: {
                 borderColor: props.darkMode ? '#2B2B43' : '#d1d4dc',
-        visible: true,
-        timeVisible: true,
+        visible: false,  // Hide time scale on sub chart to prevent misalignment
+        timeVisible: false,
+            },
+            rightPriceScale: {
+                ...commonOptions.rightPriceScale,
+                visible: true,  // Ensure price scale is visible for VOL
             },
             width: subChartContainer.value.clientWidth,
             height: subChartContainer.value.clientHeight,
@@ -421,14 +450,10 @@ const updateData = (fitContent = false) => {
                 color: line.color,
                 lineWidth: line.lineWidth || 1,
                 title: line.name,
-                priceScaleId: line.name === 'VOL' ? 'vol_scale' : 'right', // VOL logic
+                priceScaleId: 'right', // Use right scale for all series
             };
             
-            // Special VOL handling in sub chart
-            if (line.name === 'VOL' && chartInstance === subChart) {
-                 // For VOL histogram
-                 // Usually standard right scale is fine if it's the only thing or combined properly
-            }
+            // Note: All series now use the same 'right' price scale for consistency
 
             if (!series) {
                 if (line.style === 'histogram') {

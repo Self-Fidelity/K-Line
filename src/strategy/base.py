@@ -79,12 +79,20 @@ class BaseStrategy(ABC):
             - description: 策略简短描述
             - detailed_description: 策略详细说明
             - parameter_descriptions: 参数说明字典
+            - parameters: 默认参数值字典
             - required_columns: 必需的列
         """
+        # 提取默认参数值
+        parameters = {}
+        for param_name in self.parameter_descriptions.keys():
+            if hasattr(self, param_name):
+                parameters[param_name] = getattr(self, param_name)
+                
         return {
             "name": self.name,
             "description": self.description,
             "detailed_description": self.detailed_description,
             "parameter_descriptions": self.parameter_descriptions,
+            "parameters": parameters,
             "required_columns": self.get_required_columns(),
         }

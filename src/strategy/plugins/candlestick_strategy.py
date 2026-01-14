@@ -235,7 +235,7 @@ class HammerStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        shadow_ratio = kwargs.get("shadow_ratio", self.shadow_ratio)
+        shadow_ratio = float(kwargs.get("shadow_ratio", self.shadow_ratio))
         
         df["signal"] = 0
         
@@ -316,7 +316,7 @@ class HangingManStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        shadow_ratio = kwargs.get("shadow_ratio", self.shadow_ratio)
+        shadow_ratio = float(kwargs.get("shadow_ratio", self.shadow_ratio))
         
         df["signal"] = 0
         
@@ -399,8 +399,8 @@ class DojiStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        lookback = kwargs.get("lookback", self.lookback)
-        doji_threshold = kwargs.get("doji_threshold", self.doji_threshold)
+        lookback = int(kwargs.get("lookback", self.lookback))
+        doji_threshold = float(kwargs.get("doji_threshold", self.doji_threshold))
         
         df["signal"] = 0
         

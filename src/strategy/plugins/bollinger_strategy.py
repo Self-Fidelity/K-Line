@@ -86,8 +86,8 @@ class BollingerStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        period = kwargs.get("period", self.period)
-        std_dev = kwargs.get("std_dev", self.std_dev)
+        period = int(kwargs.get("period", self.period))
+        std_dev = float(kwargs.get("std_dev", self.std_dev))
         
         # 计算中轨（移动平均）
         df["middle_band"] = df["close"].rolling(window=period).mean()

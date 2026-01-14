@@ -88,8 +88,9 @@ class MAStrategy(BaseStrategy):
         df = df.sort_values("date").reset_index(drop=True)
         
         # 使用传入的参数覆盖默认值（如果提供）
-        short_period = kwargs.get("short_period", self.short_period)
-        long_period = kwargs.get("long_period", self.long_period)
+        # 使用传入的参数覆盖默认值（如果提供）
+        short_period = int(kwargs.get("short_period", self.short_period))
+        long_period = int(kwargs.get("long_period", self.long_period))
         
         # 计算移动平均线
         df["ma_short"] = df["close"].rolling(window=short_period, min_periods=1).mean()

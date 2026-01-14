@@ -67,7 +67,7 @@ class KDJStrategy(BaseStrategy):
         df = data.copy()
         df = df.sort_values("date").reset_index(drop=True)
 
-        period = kwargs.get("period", self.period)
+        period = int(kwargs.get("period", self.period))
 
         # 计算RSV
         low_min = df["low"].rolling(window=period, min_periods=1).min()

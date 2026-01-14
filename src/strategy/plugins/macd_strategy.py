@@ -96,9 +96,9 @@ class MACDStrategy(BaseStrategy):
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
-        fast_period = kwargs.get("fast_period", self.fast_period)
-        slow_period = kwargs.get("slow_period", self.slow_period)
-        signal_period = kwargs.get("signal_period", self.signal_period)
+        fast_period = int(kwargs.get("fast_period", self.fast_period))
+        slow_period = int(kwargs.get("slow_period", self.slow_period))
+        signal_period = int(kwargs.get("signal_period", self.signal_period))
         
         # 计算快线和慢线
         ema_fast = self._calculate_ema(df["close"], fast_period)

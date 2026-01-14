@@ -10,6 +10,7 @@ class StrategyInfo(BaseModel):
     description: str
     detailed_description: str = ""
     parameter_descriptions: Dict[str, str] = {}
+    parameters: Dict[str, Any] = {}
     is_system: bool = True
 
 

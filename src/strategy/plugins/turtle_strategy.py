@@ -64,8 +64,8 @@ class TurtleStrategy(BaseStrategy):
         df = data.copy()
         df = df.sort_values("date").reset_index(drop=True)
 
-        entry_period = kwargs.get("entry_period", self.entry_period)
-        exit_period = kwargs.get("exit_period", self.exit_period)
+        entry_period = int(kwargs.get("entry_period", self.entry_period))
+        exit_period = int(kwargs.get("exit_period", self.exit_period))
 
         # 计算唐奇安通道（注意：不包含当日，使用 shift(1)）
         df["donchian_high"] = df["high"].rolling(window=entry_period, min_periods=entry_period).max().shift(1)

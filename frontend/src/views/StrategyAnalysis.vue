@@ -4,36 +4,81 @@
     <el-card class="control-panel" :body-style="{ padding: '15px 20px' }">
       <el-form :model="analysisForm" :inline="true" class="control-form">
         <el-form-item label="策略">
-          <el-select
-            v-model="analysisForm.strategyName"
-            placeholder="选择策略"
-            style="width: 180px"
-            filterable
-            @change="handleStrategyChange"
-          >
-            <el-option-group label="系统策略">
-              <el-option
-                v-for="strategy in systemStrategies"
-                :key="strategy.name"
-                :label="strategy.name"
-                :value="strategy.name"
-              />
-            </el-option-group>
-            <el-option-group label="自定义策略" v-if="customStrategies.length > 0">
-              <el-option
-                v-for="strategy in customStrategies"
-                :key="strategy.name"
-                :label="strategy.name"
-                :value="strategy.name"
-              />
-            </el-option-group>
-          </el-select>
-          <el-tooltip v-if="currentStrategyInfo" :content="currentStrategyInfo.detailed_description || currentStrategyInfo.description" placement="top" :raw-content="true">
-            <template #content>
-              <div style="max-width: 300px; white-space: pre-wrap;">{{ currentStrategyInfo.detailed_description || currentStrategyInfo.description }}</div>
-            </template>
-            <el-icon style="margin-left: 5px; cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
-          </el-tooltip>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-popover
+              :visible="strategyPopoverVisible"
+              placement="bottom-start"
+              :width="400"
+              trigger="click"
+              @show="handlePopoverShow"
+              @hide="handlePopoverHide"
+            >
+              <template #reference>
+                <div class="custom-select" @click="strategyPopoverVisible = !strategyPopoverVisible">
+                  <span v-if="!analysisForm.strategyName" class="placeholder">
+                    请选择策略
+                  </span>
+                  <span v-else class="selected-text">
+                    {{ analysisForm.strategyName }}
+                  </span>
+                  <el-icon class="arrow-icon" :class="{ 'is-reverse': strategyPopoverVisible }">
+                    <ArrowDown />
+                  </el-icon>
+                </div>
+              </template>
+              
+              <div class="strategy-selector">
+                <!-- 搜索栏 -->
+                <div class="selector-header">
+                  <el-input
+                    v-model="strategySearchQuery"
+                    placeholder="搜索策略..."
+                    size="small"
+                    clearable
+                    style="flex: 1"
+                  >
+                    <template #prefix>
+                      <el-icon><Search /></el-icon>
+                    </template>
+                  </el-input>
+                </div>
+                
+                <!-- 策略列表 -->
+                <div class="strategy-list">
+                  <el-radio-group v-model="analysisForm.strategyName" @change="handleStrategyChangeFromSelector">
+                    <div
+                      v-for="strategy in filteredStrategies"
+                      :key="strategy.name"
+                      class="strategy-item"
+                    >
+                      <el-radio :value="strategy.name">
+                        <div class="strategy-info">
+                          <div class="strategy-name">{{ strategy.name }}</div>
+                          <div class="strategy-desc">{{ strategy.description }}</div>
+                        </div>
+                      </el-radio>
+                    </div>
+                  </el-radio-group>
+                  <div v-if="filteredStrategies.length === 0" class="empty-text">
+                    未找到匹配的策略
+                  </div>
+                </div>
+                
+                <!-- 底部操作栏 -->
+                <div class="selector-footer">
+                  <el-button size="small" @click="strategyPopoverVisible = false">
+                    确定
+                  </el-button>
+                </div>
+              </div>
+            </el-popover>
+            <el-tooltip v-if="currentStrategyInfo" :content="currentStrategyInfo.detailed_description || currentStrategyInfo.description" placement="top" :raw-content="true">
+              <template #content>
+                <div style="max-width: 300px; white-space: pre-wrap;">{{ currentStrategyInfo.detailed_description || currentStrategyInfo.description }}</div>
+              </template>
+              <el-icon style="margin-left: 5px; cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </div>
         </el-form-item>
 
         <el-form-item label="股票">
@@ -131,7 +176,7 @@
               :data="klineData"
               :markers="signalMarkers"
               :lines="indicatorLines"
-              :height="600"
+              autosize
               :watermark="watermarkText"
               :darkMode="isDark"
               :showSubChart="false" 
@@ -142,7 +187,7 @@
               :key="`equity-${analysisResult?.stock_code}-${analysisResult?.strategy_name}-${Date.now()}`"
               :data="[]"
               :lines="equityLines"
-              :height="600"
+              autosize
               :watermark="watermarkText"
               :darkMode="isDark"
               :showSubChart="false" 
@@ -338,7 +383,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Collection, Star, StarFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { 
+  DataAnalysis, Collection, Star, StarFilled, QuestionFilled, ArrowDown, Search 
+} from '@element-plus/icons-vue'
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyAnalyzeResponse } from '@/api/strategy'
 import { customStrategyAPI } from '@/api/customStrategy'
@@ -354,6 +401,8 @@ const systemStrategies = ref<StrategyInfo[]>([])
 const customStrategies = ref<StrategyInfo[]>([])
 const currentStrategyInfo = ref<StrategyInfo | null>(null)
 const strategyParams = reactive<Record<string, number>>({})
+const strategyPopoverVisible = ref(false)
+const strategySearchQuery = ref('')
 const analyzing = ref(false)
 const analysisResult = ref<StrategyAnalyzeResponse | null>(null)
 const activeChartTab = ref<'kline' | 'equity'>('kline')
@@ -399,7 +448,32 @@ const toggleFavorite = async () => {
 }
 
 const handleFavoriteSelect = (fav: WatchlistItem) => {
-    analysisForm.stockCode = fav.stock_code
+  analysisForm.stockCode = fav.stock_code
+}
+
+// 策略选择器相关
+const filteredStrategies = computed(() => {
+  if (!strategySearchQuery.value) {
+    return strategies.value
+  }
+  const query = strategySearchQuery.value.toLowerCase()
+  return strategies.value.filter(s => 
+    s.name.toLowerCase().includes(query) || 
+    s.description.toLowerCase().includes(query)
+  )
+})
+
+const handlePopoverShow = () => {
+  strategySearchQuery.value = ''
+}
+
+const handlePopoverHide = () => {
+  strategySearchQuery.value = ''
+}
+
+const handleStrategyChangeFromSelector = (strategyName: string) => {
+  handleStrategyChange(strategyName)
+  strategyPopoverVisible.value = false
 }
 
 // --- Computed Props ---
@@ -843,6 +917,22 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.control-form :deep(.el-form-item) {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.control-form :deep(.el-form-item__label) {
+  line-height: 32px;
+  margin-bottom: 0;
+}
+
+.control-form :deep(.el-form-item__content) {
+  line-height: 32px;
 }
 
 .main-content {
@@ -856,8 +946,22 @@ onMounted(() => {
   flex: 3;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
+.chart-section :deep(.el-card) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-section :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
 .chart-card {
   flex: 1;
   display: flex;
@@ -876,7 +980,9 @@ html.dark .chart-tabs {
 .chart-wrapper {
   flex: 1;
   position: relative;
-  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .empty-chart {
@@ -988,5 +1094,146 @@ html.dark .trade-item {
 
 html.dark .trade-details {
   color: #a0a0a0;
+}
+
+/* Custom strategy selector styles */
+.custom-select {
+  width: 300px;
+  height: 32px;
+  padding: 0 30px 0 12px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background-color: var(--el-fill-color-blank);
+}
+
+.custom-select:hover {
+  border-color: var(--el-border-color-hover);
+  background-color: var(--el-fill-color-light);
+}
+
+.custom-select .placeholder {
+  color: var(--el-text-color-placeholder);
+  font-size: 14px;
+}
+
+.custom-select .selected-text {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.custom-select .arrow-icon {
+  position: absolute;
+  right: 10px;
+  transition: transform 0.3s;
+  color: var(--el-text-color-secondary);
+}
+
+.custom-select .arrow-icon.is-reverse {
+  transform: rotate(180deg);
+  color: var(--el-color-primary);
+}
+
+/* 策略选择器弹出层 */
+.strategy-selector {
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+  background-color: var(--el-bg-color-overlay);
+  border-radius: 4px;
+}
+
+.selector-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.strategy-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  max-height: 300px;
+}
+
+.strategy-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.strategy-list::-webkit-scrollbar-thumb {
+  background-color: var(--el-border-color-darker);
+  border-radius: 3px;
+}
+
+.strategy-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--el-border-color-dark);
+}
+
+.strategy-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  width: 100%;
+}
+
+.strategy-item:hover {
+  background-color: var(--el-fill-color-light);
+}
+
+.strategy-item :deep(.el-radio) {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.strategy-item :deep(.el-radio__input) {
+  vertical-align: top;
+}
+
+.strategy-item :deep(.el-radio__label) {
+  width: 100%;
+  white-space: normal;
+  line-height: 1.4;
+  color: var(--el-text-color-regular);
+  display: inline-block;
+  vertical-align: top;
+}
+
+.strategy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.strategy-name {
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.strategy-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.3;
+}
+
+.empty-text {
+  text-align: center;
+  padding: 20px;
+  color: var(--el-text-color-placeholder);
+  font-size: 14px;
+}
+
+.selector-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--el-border-color-light);
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

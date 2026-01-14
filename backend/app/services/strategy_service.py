@@ -90,6 +90,7 @@ class StrategyService:
                 "description": strategy_info["description"],
                 "detailed_description": strategy_info.get("detailed_description", ""),
                 "parameter_descriptions": strategy_info.get("parameter_descriptions", {}),
+                "parameters": strategy_info.get("parameters", {}),
                 "is_system": True,
             }
         

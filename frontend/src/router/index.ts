@@ -59,6 +59,12 @@ const routes: RouteRecordRaw[] = [
             meta: { requiresAuth: true, title: '策略对比' },
           },
           {
+            path: 'aggregation',
+            name: 'StrategyAggregation',
+            component: () => import('@/views/StrategyAggregation.vue'),
+            meta: { requiresAuth: true, title: '策略聚合' },
+          },
+          {
             path: 'batch',
             name: 'BatchAnalysis',
             component: () => import('@/views/BatchAnalysis.vue'),
@@ -97,7 +103,7 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
-  
+
   // Set document title
   document.title = `${to.meta.title} - K-Line Daily` || 'K-Line Daily'
 

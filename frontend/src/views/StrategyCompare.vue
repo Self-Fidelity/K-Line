@@ -1258,6 +1258,22 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.control-form :deep(.el-form-item) {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.control-form :deep(.el-form-item__label) {
+  line-height: 32px;
+  margin-bottom: 0;
+}
+
+.control-form :deep(.el-form-item__content) {
+  line-height: 32px;
 }
 
 .card-header {

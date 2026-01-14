@@ -9,6 +9,7 @@ export interface StrategyInfo {
   description: string
   detailed_description?: string
   parameter_descriptions?: Record<string, string>
+  parameters?: Record<string, any>
   is_system: boolean
 }
 
@@ -46,10 +47,10 @@ export interface StrategyStatistics {
   win_rate: number
   pl_ratio: number
   total_trades: number
-  
+
   benchmark_return: number
   benchmark_max_drawdown: number
-  
+
   // 曲线数据
   equity_curve: number[]
   benchmark_curve: number[]
@@ -165,6 +166,77 @@ export const strategyAPI = {
       num_particles: numParticles,
       max_iter: maxIter,
     })
+    return response.data
+  },
+}
+
+// ========== Strategy Aggregation ==========
+
+export interface StrategyWithWeight {
+  name: string
+  params: Record<string, any>
+  weight: number  // Range: 0.1-10.0
+}
+
+export interface AggregationSettings {
+  buy_threshold: number   // Minimum buy weight to trigger buy
+  sell_threshold: number  // Minimum sell weight to trigger sell
+  required_strategies: string[]  // Must be present (veto power)
+}
+
+export interface AggregationRequest {
+  stock_code: string
+  start_date: string
+  end_date: string
+  strategies: StrategyWithWeight[]
+  settings: AggregationSettings
+}
+
+export interface SignalDetail {
+  strategy_name: string
+  signal: number  // 1=buy, -1=sell, 0=hold
+  weight: number
+}
+
+export interface AggregatedSignal {
+  date: string
+  final_signal: number  // 1=buy, -1=sell, 0=hold
+  buy_weight: number
+  sell_weight: number
+  strategy_details: SignalDetail[]
+}
+
+export interface AggregationResponse {
+  stock_code: string
+  stock_name?: string
+  start_date: string
+  end_date: string
+  aggregated_signals: AggregatedSignal[]
+  trade_records: TradeRecord[]
+  statistics: {
+    total_trades: number
+    winning_trades: number
+    losing_trades: number
+    win_rate: number
+    total_return: number
+    average_return: number
+    max_drawdown?: number
+    annualized_return?: number
+    sharpe_ratio?: number
+    sortino_ratio?: number
+    pl_ratio?: number
+    benchmark_return?: number
+    benchmark_drawdown?: number
+  }
+  total_weight: number
+}
+
+export const strategyAggregationAPI = {
+  analyzeAggregation: async (request: AggregationRequest): Promise<AggregationResponse> => {
+    const response = await apiClient.post<AggregationResponse>(
+      '/api/strategy-aggregation/analyze',
+      request
+    )
     return response.data
   },
 }

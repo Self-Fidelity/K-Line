@@ -63,8 +63,8 @@ VWMA 能够过滤掉无量上涨或下跌带来的虚假信号。
         df = data.copy()
         df = df.sort_values("date").reset_index(drop=True)
 
-        short_period = kwargs.get("short_period", self.short_period)
-        long_period = kwargs.get("long_period", self.long_period)
+        short_period = int(kwargs.get("short_period", self.short_period))
+        long_period = int(kwargs.get("long_period", self.long_period))
 
         # 计算 PV = Price * Volume
         df["pv"] = df["close"] * df["volume"]
