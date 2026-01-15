@@ -1,8 +1,9 @@
 """SQLite 数据存储实现"""
 
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import sqlite3
 import pandas as pd
+import json
 from datetime import datetime
 
 from src.data_storage.storage import DataStorage
@@ -73,7 +74,7 @@ class SQLiteStorage(DataStorage):
                 ON stock_daily_kline(stock_code, trade_date)
             """)
 
-            # 创建策略参数表
+            # 创建策略参数表（旧版，保留向后兼容）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS stock_strategy_params (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,6 +84,39 @@ class SQLiteStorage(DataStorage):
                     update_time TEXT NOT NULL,
                     UNIQUE(stock_code, strategy_name)
                 )
+            """)
+            
+            # 创建策略参数集表（新版，支持多参数集）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS strategy_param_sets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    stock_code TEXT NOT NULL,
+                    strategy_name TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    params TEXT NOT NULL,
+                    param_ranges TEXT,
+                    target_metric TEXT,
+                    best_score REAL,
+                    optimization_method TEXT,
+                    num_particles INTEGER,
+                    max_iter INTEGER,
+                    date_range TEXT,
+                    created_at TEXT NOT NULL,
+                    is_default INTEGER DEFAULT 0,
+                    UNIQUE(stock_code, strategy_name, name)
+                )
+            """)
+            
+            # 创建参数集索引
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_param_sets_stock_strategy
+                ON strategy_param_sets(stock_code, strategy_name)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_param_sets_created
+                ON strategy_param_sets(created_at DESC)
             """)
             
             conn.commit()
@@ -377,6 +411,250 @@ class SQLiteStorage(DataStorage):
 
         except Exception as e:
             logger.error(f"获取策略参数失败: {e}", exc_info=True)
+            return None
+        finally:
+            conn.close()
+
+    # ==================== 参数集管理方法 ====================
+    
+    def save_param_set(
+        self,
+        stock_code: str,
+        strategy_name: str,
+        name: str,
+        params: Dict[str, Any],
+        description: str = "",
+        param_ranges: Optional[Dict[str, List[float]]] = None,
+        target_metric: Optional[str] = None,
+        best_score: Optional[float] = None,
+        optimization_method: Optional[str] = None,
+        num_particles: Optional[int] = None,
+        max_iter: Optional[int] = None,
+        date_range: Optional[str] = None,
+        is_default: bool = False
+    ) -> Optional[int]:
+        """
+        保存参数集
+        
+        Args:
+            stock_code: 股票代码
+            strategy_name: 策略名称
+            name: 参数集名称
+            params: 参数字典
+            description: 描述
+            param_ranges: 参数范围
+            target_metric: 优化目标指标
+            best_score: 最佳得分
+            optimization_method: 优化方法
+            num_particles: 粒子数
+            max_iter: 迭代次数
+            date_range: 日期范围
+            is_default: 是否为默认参数集
+        
+        Returns:
+            参数集ID，失败返回None
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 如果设置为默认，先将其他参数集的默认标志清除
+            if is_default:
+                cursor.execute(
+                    "UPDATE strategy_param_sets SET is_default = 0 WHERE stock_code = ? AND strategy_name = ?",
+                    (stock_code, strategy_name)
+                )
+            
+            sql = """
+                INSERT OR REPLACE INTO strategy_param_sets
+                (stock_code, strategy_name, name, description, params, param_ranges,
+                 target_metric, best_score, optimization_method, num_particles, max_iter,
+                 date_range, created_at, is_default)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            cursor.execute(sql, (
+                stock_code,
+                strategy_name,
+                name,
+                description,
+                json.dumps(params),
+                json.dumps(param_ranges) if param_ranges else None,
+                target_metric,
+                best_score,
+                optimization_method,
+                num_particles,
+                max_iter,
+                date_range,
+                created_at,
+                1 if is_default else 0
+            ))
+            
+            conn.commit()
+            param_set_id = cursor.lastrowid
+            logger.info(f"保存参数集成功: {stock_code}/{strategy_name}/{name}, ID={param_set_id}")
+            return param_set_id
+        
+        except Exception as e:
+            logger.error(f"保存参数集失败: {e}", exc_info=True)
+            conn.rollback()
+            return None
+        finally:
+            conn.close()
+
+    def get_param_sets(
+        self,
+        stock_code: str,
+        strategy_name: str
+    ) -> List[Dict[str, Any]]:
+        """
+        获取参数集列表
+        
+        Args:
+            stock_code: 股票代码
+            strategy_name: 策略名称
+        
+        Returns:
+            参数集列表
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM strategy_param_sets
+                WHERE stock_code = ? AND strategy_name = ?
+                ORDER BY is_default DESC, created_at DESC
+                """,
+                (stock_code, strategy_name)
+            )
+            
+            results = []
+            for row in cursor.fetchall():
+                result = dict(row)
+                # 解析JSON字段
+                result['params'] = json.loads(result['params'])
+                if result['param_ranges']:
+                    result['param_ranges'] = json.loads(result['param_ranges'])
+                results.append(result)
+            
+            return results
+        
+        except Exception as e:
+            logger.error(f"获取参数集失败: {e}", exc_info=True)
+            return []
+        finally:
+            conn.close()
+
+    def get_param_set_by_id(self, param_set_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取参数集"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM strategy_param_sets WHERE id = ?",
+                (param_set_id,)
+            )
+            
+            row = cursor.fetchone()
+            if row:
+                result = dict(row)
+                result['params'] = json.loads(result['params'])
+                if result['param_ranges']:
+                    result['param_ranges'] = json.loads(result['param_ranges'])
+                return result
+            return None
+        
+        except Exception as e:
+            logger.error(f"获取参数集失败: {e}", exc_info=True)
+            return None
+        finally:
+            conn.close()
+
+    def delete_param_set(self, param_set_id: int) -> bool:
+        """删除参数集"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM strategy_param_sets WHERE id = ?",
+                (param_set_id,)
+            )
+            conn.commit()
+            logger.info(f"删除参数集成功: {param_set_id}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"删除参数集失败: {e}", exc_info=True)
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def set_default_param_set(
+        self,
+        param_set_id: int,
+        stock_code: str,
+        strategy_name: str
+    ) -> bool:
+        """设置默认参数集"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # 先清除所有默认标志
+            cursor.execute(
+                "UPDATE strategy_param_sets SET is_default = 0 WHERE stock_code = ? AND strategy_name = ?",
+                (stock_code, strategy_name)
+            )
+            
+            # 设置指定参数集为默认
+            cursor.execute(
+                "UPDATE strategy_param_sets SET is_default = 1 WHERE id = ?",
+                (param_set_id,)
+            )
+            
+            conn.commit()
+            logger.info(f"设置默认参数集成功: {param_set_id}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"设置默认参数集失败: {e}", exc_info=True)
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_default_param_set(
+        self,
+        stock_code: str,
+        strategy_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """获取默认参数集"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM strategy_param_sets
+                WHERE stock_code = ? AND strategy_name = ? AND is_default = 1
+                LIMIT 1
+                """,
+                (stock_code, strategy_name)
+            )
+            
+            row = cursor.fetchone()
+            if row:
+                result = dict(row)
+                result['params'] = json.loads(result['params'])
+                if result['param_ranges']:
+                    result['param_ranges'] = json.loads(result['param_ranges'])
+                return result
+            return None
+        
+        except Exception as e:
+            logger.error(f"获取默认参数集失败: {e}", exc_info=True)
             return None
         finally:
             conn.close()

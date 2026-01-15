@@ -1,4 +1,4 @@
-"""FastAPI应用入口"""
+"""FastAPI 主应用"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,20 +9,30 @@ import sys
 
 from backend.app.config import settings
 
+# 配置日志
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# )
+
+# logger = logging.getLogger(__name__)
+
+# settings = get_settings() # This line will be removed or changed if settings is directly imported
+
 # 创建FastAPI应用
 app = FastAPI(
     title="K-Line API",
-    description="中国股市数据获取和策略分析API",
-    version="0.1.0",
+    description="K线数据和策略分析API",
+    version="1.0.0",
 )
 
-# 配置CORS
+# 配置CORS - 允许前端访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],  # 允许所有来源
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # 允许所有方法
+    allow_headers=["*"],  # 允许所有头部
 )
 
 
@@ -45,7 +55,7 @@ async def health_check():
 
 
 # 导入路由
-from backend.app.api import auth, data, strategy, chart, batch_analysis, data_update, custom_strategy, watchlist, strategy_aggregation
+from backend.app.api import auth, data, strategy, chart, batch_analysis, data_update, custom_strategy, watchlist, strategy_aggregation, param_sets
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(data.router, prefix="/api/data", tags=["数据"])
@@ -56,6 +66,7 @@ app.include_router(data_update.router, prefix="/api/admin/data-update", tags=["�
 app.include_router(custom_strategy.router, prefix="/api/custom-strategy", tags=["自定义策略"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["自选股"])
 app.include_router(strategy_aggregation.router, prefix="/api/strategy-aggregation", tags=["策略聚合"])
+app.include_router(param_sets.router, prefix="/api/strategy", tags=["参数集管理"])
 
 # 启动数据更新服务
 from backend.app.services.data_update_service import DataUpdateService

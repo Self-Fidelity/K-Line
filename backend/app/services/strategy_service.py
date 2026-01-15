@@ -16,6 +16,7 @@ from src.strategy.optimization import Optimizer
 from src.data_storage.sqlite_storage import SQLiteStorage
 from src.utils.logger import get_logger
 from backend.app.services.custom_strategy_service import CustomStrategyService
+from backend.app.services.data_service import DataService # Added this line
 import json
 
 logger = get_logger(__name__)
@@ -30,6 +31,7 @@ class StrategyService:
         self.statistics = StrategyStatistics()
         self.custom_strategy_service = CustomStrategyService()
         self.storage = SQLiteStorage()
+        self.data_service = DataService() # Added this line
     
     def list_strategies(self, user_id: Optional[int] = None) -> List[Dict]:
         """
@@ -420,38 +422,65 @@ class StrategyService:
         param_ranges: Dict[str, List[Any]],
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        method: str = "pso",
         target_metric: str = "sharpe_ratio",
-        num_particles: int = 10,
-        max_iter: int = 20
+        method: str = "pso",
+        num_particles: int = 20,
+        max_iter: int = 50,
     ) -> Dict[str, Any]:
-        """优化策略参数"""
+        """
+        优化策略参数
+        """
+        # 获取历史数据
+        data = self.data_service.get_kline_data(
+            stock_code=stock_code, start_date=start_date, end_date=end_date
+        )
 
-        # 获取数据
-        from backend.app.services.data_service import DataService
-        data_service = DataService()
-        data = data_service.get_kline_data(stock_code, start_date=start_date, end_date=end_date)
         if data.empty:
-            raise ValueError(f"股票 {stock_code} 数据为空")
+            raise ValueError(f"股票 {stock_code} 无可用数据")
 
-        optimizer = Optimizer(strategy_name, data)
+        # 创建优化器
+        optimizer = Optimizer(strategy_name=strategy_name, stock_data=data)
 
-        # Parse ranges for PSO: [min, max] -> (min, max, type)
-        bounds = {}
-        for key, val in param_ranges.items():
-            if isinstance(val, list) and len(val) == 2:
-                # 简单推断类型：如果都是整数且策略默认也是整数
-                # 这里简化：只要输入是整数就按整数优化
-                is_int = isinstance(val[0], int) and isinstance(val[1], int)
-                bounds[key] = (val[0], val[1], int if is_int else float)
+        # 将param_ranges转换为优化器需要的格式
+        # 前端传入: {"period": [5, 40], "std_dev": [1, 5]}
+        # 优化器需要: {"period": (5, 40, int), "std_dev": (1, 5, int)}
+        param_bounds = {}
+        for key, value_range in param_ranges.items():
+            if len(value_range) != 2:
+                raise ValueError(f"参数 {key} 的范围应为 [min, max]")
 
+            min_val, max_val = value_range
+            # 简单判断类型：如果都是整数，使用int，否则使用float
+            if isinstance(min_val, int) and isinstance(max_val, int):
+                param_bounds[key] = (min_val, max_val, int)
+            else:
+                param_bounds[key] = (float(min_val), float(max_val), float)
+
+        # 执行优化
         if method == "pso":
-            return optimizer.optimize_pso(
-                bounds,
+            result = optimizer.optimize_pso(
+                param_bounds=param_bounds,
                 num_particles=num_particles,
                 max_iter=max_iter,
-                target_metric=target_metric
+                target_metric=target_metric,
+            )
+        elif method == "grid":
+            # 网格搜索暂不支持指定粒子数和迭代次数
+            # 将范围转换为网格
+            param_grid = {}
+            for key, (min_val, max_val, dtype) in param_bounds.items():
+                if dtype is int:
+                    param_grid[key] = list(range(int(min_val), int(max_val) + 1))
+                else:
+                    # 浮点数，生成10个点
+                    import numpy as np
+                    param_grid[key] = np.linspace(min_val, max_val, 10).tolist()
+            result = optimizer.optimize_grid(
+                param_grid=param_grid, target_metric=target_metric
             )
         else:
-            # 默认使用 grid (如果以后实现)
-            raise ValueError("只支持 pso 优化方法")
+            raise ValueError(f"不支持的优化方法: {method}")
+
+        # 确保返回完整的结果，包括新增字段
+        print(f"优化器返回的完整结果: {result}")
+        return result

@@ -74,6 +74,16 @@ class StrategyStatisticsModel(BaseModel):
     daily_returns: List[float] = []
 
 
+class OptimizeResponse(BaseModel):
+    """优化响应"""
+    best_params: Dict[str, Any]
+    best_score: float
+    method: str
+    convergence_curve: Optional[List[float]] = None  # 新增：收敛曲线
+    iterations: Optional[int] = None  # 新增：迭代次数
+    optimization_logs: Optional[List[str]] = None  # 新增：优化日志
+
+
 class StrategyAnalyzeResponse(BaseModel):
     """策略分析响应模型"""
     strategy_name: str

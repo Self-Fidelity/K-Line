@@ -1,173 +1,435 @@
 <template>
   <div class="strategy-optimization">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>策略参数优化</span>
-        </div>
-      </template>
+    <!-- 三栏布局 -->
+    <div class="optimization-container">
+      <!-- 左侧：配置面板 -->
+      <div class="config-section">
+        <!-- 配置面板 -->
+        <el-card class="config-card" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <el-icon><Setting /></el-icon>
+              <span>优化配置</span>
+            </div>
+          </template>
 
-      <el-form :model="form" label-width="120px" class="optimize-form">
-        <!-- 股票选择 -->
-        <el-form-item label="选择股票" required>
-          <el-autocomplete
-            v-model="form.stock_code"
-            :fetch-suggestions="searchStocks"
-            placeholder="请输入股票代码或名称"
-            style="width: 300px"
-            @select="handleStockSelect"
+          <el-form :model="form" label-width="100px" label-position="top">
+            <!-- 股票选择（带收藏下拉） -->
+            <el-form-item label="股票代码">
+              <div style="display: flex; gap: 5px; align-items: center;">
+                <el-dropdown trigger="click" @command="handleFavoriteSelect">
+                  <el-button :icon="Collection" circle title="我的收藏" />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item v-if="favorites.length === 0" disabled>暂无收藏</el-dropdown-item>
+                      <el-dropdown-item
+                        v-for="fav in favorites"
+                        :key="fav.id"
+                        :command="fav"
+                      >
+                        {{ fav.stock_code }} - {{ fav.stock_name || '未知' }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+
+                <el-autocomplete
+                  v-model="form.stock_code"
+                  :fetch-suggestions="searchStocks"
+                  placeholder="代码/名称"
+                  style="width: 180px"
+                  @select="handleStockSelect"
+                >
+                  <template #default="{ item }">
+                    <span class="stock-code">{{ item.code }}</span>
+                    <span class="stock-name">{{ item.name }}</span>
+                  </template>
+                </el-autocomplete>
+
+                <el-button
+                  :type="isFavorite ? 'warning' : 'default'"
+                  :icon="isFavorite ? StarFilled : Star"
+                  circle
+                  @click="toggleFavorite"
+                  :disabled="!form.stock_code"
+                  title="收藏当前股票"
+                />
+              </div>
+            </el-form-item>
+
+            <!-- 策略选择 -->
+            <el-form-item label="策略">
+              <el-select v-model="form.strategy_name" placeholder="选择策略" @change="handleStrategyChange">
+                <el-option
+                  v-for="s in strategies"
+                  :key="s.name"
+                  :label="s.name"
+                  :value="s.name"
+                >
+                  <span>{{ s.name }}</span>
+                  <span style="float: right; color: var(--el-text-color-secondary); font-size: 13px">
+                    {{ s.description }}
+                  </span>
+                </el-option>
+              </el-select>
+            </el-form-item>
+
+            <!-- 日期范围（带快捷选项） -->
+            <el-form-item label="日期范围">
+              <el-date-picker
+                v-model="dateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                :shortcuts="dateShortcuts"
+                style="width: 100%"
+              />
+            </el-form-item>
+
+            <!-- 优化目标 -->
+            <el-form-item label="优化目标">
+              <el-select v-model="form.target_metric">
+                <el-option label="夏普比率" value="sharpe_ratio" />
+                <el-option label="累计收益率" value="cumulative_return" />
+                <el-option label="索提诺比率" value="sortino_ratio" />
+                <el-option label="胜率" value="win_rate" />
+              </el-select>
+            </el-form-item>
+
+            <!-- 算法参数 -->
+            <el-form-item label="粒子数量">
+              <el-input-number v-model="form.num_particles" :min="5" :max="50" style="width: 100%" />
+            </el-form-item>
+
+            <el-form-item label="迭代次数">
+              <el-input-number v-model="form.max_iter" :min="5" :max="100" style="width: 100%" />
+            </el-form-item>
+
+            <el-divider content-position="left">参数范围</el-divider>
+
+            <!-- 参数范围 -->
+            <div v-if="Object.keys(paramRanges).length > 0" class="param-ranges">
+              <div v-for="(range, key) in paramRanges" :key="key" class="param-range-item">
+                <div class="label">{{ getParameterLabel(key) }}</div>
+                <div class="range-inputs">
+                  <el-input-number v-model="range[0]" size="small" :controls="false" />
+                  <span>~</span>
+                  <el-input-number v-model="range[1]" size="small" :controls="false" />
+                </div>
+              </div>
+            </div>
+            <el-empty v-else description="请先选择策略" :image-size="60" />
+
+            <!-- 操作按钮 -->
+            <el-form-item style="margin-top: 20px">
+              <el-button type="primary" @click="handleOptimize" :loading="optimizing" :disabled="!canOptimize" block>
+                <el-icon><VideoPlay /></el-icon>
+                开始优化
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </div>
+
+      <!-- 中间：进度和结果 -->
+      <div class="result-section">
+        <el-card class="result-card">
+          <template #header>
+            <div class="card-header">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>优化结果</span>
+            </div>
+          </template>
+
+          <!-- 优化中 -->
+          <div v-if="optimizing" class="optimizing-state">
+            <div class="progress-header">
+              <h3>正在优化参数...</h3>
+              <div class="progress-meta">
+                <span>{{ form.strategy_name }}</span>
+                <span>•</span>
+                <span>{{ form.target_metric }}</span>
+              </div>
+            </div>
+            
+            <div class="progress-bar-container">
+              <el-progress 
+                :percentage="optimizingProgress" 
+                :stroke-width="24"
+                :show-text="false"
+              />
+              <div class="progress-text">
+                <span class="percentage">{{ optimizingProgress.toFixed(1) }}%</span>
+                <span class="status">{{ optimizingStatusText }}</span>
+              </div>
+            </div>
+            
+            <div class="progress-stats" v-if="optimizingElapsedTime > 0">
+              <div class="stat-item">
+                <div class="stat-label">已用时间</div>
+                <div class="stat-value">{{ formatElapsedTime(optimizingElapsedTime) }}</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">预计剩余</div>
+                <div class="stat-value">{{ formatElapsedTime(optimizingEstimatedRemaining) }}</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">当前最佳</div>
+                <div class="stat-value">{{ optimizingBestScore ? optimizingBestScore.toFixed(4) : '--' }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 未开始 -->
+          <el-empty 
+            v-else-if="!result" 
+            description="配置参数后点击【开始优化】"
+            :image-size="120"
+          />
+
+          <!-- 优化结果 -->
+          <div v-else class="result-content">
+            <div class="best-score">
+              <div class="score-label">{{ getMetricLabel(form.target_metric) }}</div>
+              <div class="score-value">{{ result.best_score.toFixed(4) }}</div>
+              <div class="score-meta" v-if="result.iterations">
+                {{ result.iterations }} 次迭代完成
+              </div>
+            </div>
+
+            <el-divider />
+
+            <!-- 收敛曲线 -->
+            <div class="convergence-chart-section" v-if="result.convergence_curve && result.convergence_curve.length > 0">
+              <h4>收敛过程</h4>
+              <div class="chart-wrapper" ref="chartContainer" style="height: 300px; width: 100%;"></div>
+            </div>
+
+            <!-- 优化日志 -->
+            <div class="optimization-logs" v-if="result.optimization_logs && result.optimization_logs.length > 0">
+              <h4>优化日志</h4>
+              <div class="logs-container">
+                <div v-for="(log, index) in result.optimization_logs" :key="index" class="log-line">
+                  {{ log }}
+                </div>
+              </div>
+            </div>
+
+            <div class="best-params">
+              <h4>最佳参数组合</h4>
+              <div class="params-list">
+                <div v-for="(value, key) in result.best_params" :key="key" class="param-chip">
+                  <span class="key">{{ getParameterLabel(key) }}</span>
+                  <span class="value">{{ value }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="param-ranges-info">
+              <h4>参数优化区间</h4>
+              <div class="ranges-list">
+                <div v-for="(range, key) in paramRanges" :key="key" class="range-info">
+                  <span class="key">{{ getParameterLabel(key) }}:</span>
+                  <span class="range">[{{ range[0] }}, {{ range[1] }}]</span>
+                </div>
+              </div>
+            </div>
+
+            <el-button type="success" @click="showSaveDialog" style="margin-top: 20px" block>
+              <el-icon><Check /></el-icon>
+              保存到参数库
+            </el-button>
+          </div>
+        </el-card>
+      </div>
+
+      <!-- 右侧：参数库 -->
+      <div class="library-section">
+        <el-card class="library-card">
+          <template #header>
+            <div class="card-header">
+              <el-icon><FolderOpened /></el-icon>
+              <span>参数库</span>
+              <el-button 
+                v-if="form.stock_code && form.strategy_name"
+                text 
+                size="small" 
+                @click="loadParamSets"
+              >
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+            </div>
+          </template>
+
+          <!-- 参数集列表 -->
+          <div v-if="paramSets.length > 0" class="param-sets-list">
+            <div
+              v-for="set in paramSets"
+              :key="set.id"
+              class="param-set-card"
+              :class="{ 'is-default': set.is_default }"
+              @click="loadParamSet(set)"
+            >
+              <div class="set-header">
+                <span class="set-name">{{ set.name }}</span>
+                <el-tag v-if="set.is_default" type="success" size="small">默认</el-tag>
+              </div>
+              
+              <!-- 日期区间 -->
+              <div class="set-date-range" v-if="set.date_range">
+                <el-icon><Calendar /></el-icon>
+                <span>{{ set.date_range }}</span>
+              </div>
+              
+              <!-- 得分信息 -->
+              <div class="set-score" v-if="set.best_score !== null && set.best_score !== undefined">
+                <span class="label">{{ getMetricLabel(set.target_metric || '得分') }}:</span>
+                <span class="value">{{ set.best_score.toFixed(4) }}</span>
+              </div>
+              
+              <!-- 参数详情 -->
+              <div class="set-params" v-if="set.params">
+                <div class="params-title">参数:</div>
+                <div class="params-content">
+                  <span v-for="(value, key) in set.params" :key="key" class="param-tag">
+                    {{ getParameterLabel(key) }}: {{ value }}
+                  </span>
+                </div>
+              </div>
+              
+              <!-- 优化区间 -->
+              <div class="set-ranges" v-if="set.param_ranges">
+                <div class="ranges-title">优化区间:</div>
+                <div class="ranges-content">
+                  <span v-for="(range, key) in set.param_ranges" :key="key" class="range-tag">
+                    {{ getParameterLabel(key) }}: [{{ range[0] }}, {{ range[1] }}]
+                  </span>
+                </div>
+              </div>
+              
+              <!-- 创建时间 -->
+              <div class="set-time">
+                <el-icon><Clock /></el-icon>
+                {{ formatDateTime(set.created_at) }}
+              </div>
+              
+              <!-- 操作按钮 -->
+              <div class="set-actions" @click.stop>
+                <el-button 
+                  text 
+                  size="small" 
+                  type="primary"
+                  @click="setDefaultParamSet(set)"
+                  v-if="!set.is_default"
+                >
+                  设为默认
+                </el-button>
+                <el-button 
+                  text 
+                  size="small" 
+                  type="danger"
+                  @click="deleteParamSet(set)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空状态 -->
+          <el-empty 
+            v-else 
+            description="暂无保存的参数"
+            :image-size="80"
           >
-            <template #default="{ item }">
-              <span class="stock-code">{{ item.code }}</span>
-              <span class="stock-name">{{ item.name }}</span>
+            <template #description>
+              <p>{{ form.stock_code && form.strategy_name ? '暂无保存的参数' : '请先选择股票和策略' }}</p>
             </template>
-          </el-autocomplete>
-        </el-form-item>
+          </el-empty>
+        </el-card>
+      </div>
+    </div>
 
-        <!-- 时间范围 -->
-        <el-form-item label="时间范围">
-          <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-            :shortcuts="dateShortcuts"
-            style="width: 300px"
-            @change="handleDateRangeChange"
+    <!-- 保存参数对话框 -->
+    <el-dialog
+      v-model="saveDialogVisible"
+      title="保存参数集"
+      width="500px"
+    >
+      <el-form :model="saveForm" label-width="100px">
+        <el-form-item label="参数集名称" required>
+          <el-input v-model="saveForm.name" placeholder="例如：最佳参数-2025-01-15" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input 
+            v-model="saveForm.description" 
+            type="textarea" 
+            :rows="3"
+            placeholder="描述该参数集的特点、适用场景等"
           />
         </el-form-item>
-
-        <!-- 策略选择 -->
-        <el-form-item label="选择策略" required>
-          <el-select
-            v-model="form.strategy_name"
-            placeholder="请选择策略"
-            style="width: 300px"
-            @change="handleStrategyChange"
-          >
-            <el-option
-              v-for="strategy in strategies"
-              :key="strategy.name"
-              :label="strategy.name"
-              :value="strategy.name"
-            >
-              <div style="display: flex; justify-content: space-between; align-items: center">
-                <span>{{ strategy.name }}</span>
-                <span style="font-size: 12px; color: #999; margin-left: 10px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                  {{ strategy.description }}
-                </span>
-              </div>
-            </el-option>
-          </el-select>
-        </el-form-item>
-
-        <!-- 优化目标 -->
-        <el-form-item label="优化目标" required>
-          <el-select v-model="form.target_metric" style="width: 300px">
-            <el-option label="夏普比率 (Sharpe Ratio)" value="sharpe_ratio" />
-            <el-option label="累计收益率 (Total Return)" value="cumulative_return" />
-            <el-option label="索提诺比率 (Sortino Ratio)" value="sortino_ratio" />
-            <el-option label="胜率 (Win Rate)" value="win_rate" />
-          </el-select>
-        </el-form-item>
-
-        <!-- 算法参数 -->
-        <el-form-item label="粒子数量">
-          <el-input-number v-model="form.num_particles" :min="5" :max="100" />
-          <div class="form-hint">粒子群算法中的粒子数量，越多搜索越全面但速度越慢</div>
-        </el-form-item>
-
-        <el-form-item label="迭代次数">
-          <el-input-number v-model="form.max_iter" :min="5" :max="200" />
-          <div class="form-hint">算法迭代次数，越多越可能找到全局最优</div>
-        </el-form-item>
-
-        <!-- 参数范围配置 -->
-        <el-divider content-position="left">参数范围配置</el-divider>
-        <div v-if="form.strategy_name && Object.keys(paramRanges).length > 0" class="param-ranges">
-          <div v-for="(range, key) in paramRanges" :key="key" class="range-item">
-            <div class="range-label">
-              <span>{{ getParameterLabel(key) }}</span>
-              <el-tooltip v-if="getParameterDescription(key)" :content="getParameterDescription(key)" placement="top">
-                <el-icon><QuestionFilled /></el-icon>
-              </el-tooltip>
-            </div>
-            <div class="range-inputs">
-              <el-input-number v-model="range[0]" size="small" placeholder="最小值" />
-              <span class="separator">至</span>
-              <el-input-number v-model="range[1]" size="small" placeholder="最大值" />
-            </div>
-          </div>
-        </div>
-        <div v-else-if="form.strategy_name" class="empty-params">
-          该策略无需配置参数范围
-        </div>
-        <div v-else class="empty-params">
-          请先选择策略
-        </div>
-
-        <el-form-item style="margin-top: 30px">
-          <el-button type="primary" @click="handleOptimize" :loading="optimizing" :disabled="!canOptimize">
-            <el-icon><VideoPlay /></el-icon> 开始优化
-          </el-button>
+        <el-form-item label="设为默认">
+          <el-switch v-model="saveForm.is_default" />
         </el-form-item>
       </el-form>
-    </el-card>
-
-    <!-- 优化结果 -->
-    <el-card v-if="result" style="margin-top: 20px" class="result-card">
-      <template #header>
-        <div class="card-header">
-          <span>优化结果</span>
-          <el-button type="success" @click="saveParams" :loading="saving">
-            <el-icon><Check /></el-icon> 保存参数
-          </el-button>
-        </div>
+      <template #footer>
+        <el-button @click="saveDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveParamSet" :loading="saving">
+          保存
+        </el-button>
       </template>
-
-      <div class="result-content">
-        <div class="score-display">
-          <div class="label">最佳得分 ({{ getMetricLabel(form.target_metric) }})</div>
-          <div class="value">{{ result.best_score.toFixed(4) }}</div>
-        </div>
-
-        <div class="best-params">
-          <h3>最佳参数组合</h3>
-          <div class="params-grid">
-            <div v-for="(value, key) in result.best_params" :key="key" class="param-item">
-              <span class="key">{{ getParameterLabel(key) }}:</span>
-              <span class="val">{{ value }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { VideoPlay, Check, QuestionFilled } from '@element-plus/icons-vue'
+import { 
+  createChart, 
+  ColorType, 
+  AreaSeries 
+} from 'lightweight-charts'
+import type { IChartApi, ISeriesApi } from 'lightweight-charts'
+import { ref, reactive, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { 
+  Setting, VideoPlay, Check, DataAnalysis, Folder, Refresh, Calendar, Clock, TrendCharts, DataLine,
+  Collection, Star, StarFilled
+} from '@element-plus/icons-vue'
 import { strategyAPI, type StrategyInfo } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
+import { paramSetsAPI, type ParamSet } from '@/api/param-sets'
+import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
+import { useDark } from '@vueuse/core'
 
+const isDark = useDark()
+
+// 状态
 const strategies = ref<StrategyInfo[]>([])
 const strategyInfoMap = ref<Record<string, StrategyInfo>>({})
 const optimizing = ref(false)
-const saving = ref(false)
+const optimizingProgress = ref(0)
+const optimizingStatusText = ref('准备中...')
+const optimizingElapsedTime = ref(0)
+const optimizingEstimatedRemaining = ref(0)
+const optimizingBestScore = ref<number | null>(null)
+const optimizingStartTime = ref(0)
+const optimizingTimer = ref<number | null>(null)
 const result = ref<any>(null)
+const paramSets = ref<ParamSet[]>([])
+const saveDialogVisible = ref(false)
+const saving = ref(false)
+const convergenceChart = ref<HTMLCanvasElement | null>(null)
 
+// 表单
 const form = reactive({
   stock_code: '',
   strategy_name: '',
-  start_date: '',
-  end_date: '',
   target_metric: 'sharpe_ratio',
-  num_particles: 20,
-  max_iter: 30,
+  num_particles: 10,  // 默认10
+  max_iter: 15,  // 默认15
 })
 
 const dateRange = ref<[string, string]>(['', ''])
@@ -175,37 +437,92 @@ const paramRanges = reactive<Record<string, number[]>>({})
 
 // 日期快捷选项
 const dateShortcuts = [
-  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
-  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
-  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
-  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
+  {
+    text: '最近1个月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setMonth(start.getMonth() - 1)
+      return [start, end]
+    },
+  },
+  {
+    text: '最近3个月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setMonth(start.getMonth() - 3)
+      return [start, end]
+    },
+  },
+  {
+    text: '最近6个月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setMonth(start.getMonth() - 6)
+      return [start, end]
+    },
+  },
+  {
+    text: '最近1年',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setFullYear(start.getFullYear() - 1)
+      return [start, end]
+    },
+  },
 ]
 
-const handleDateRangeChange = (val: any) => {
-  if (!val) {
-    form.start_date = ''
-    form.end_date = ''
-  } else {
-    form.start_date = val[0]
-    form.end_date = val[1]
+// 收藏功能
+const favorites = ref<WatchlistItem[]>([])
+const isFavorite = computed(() => {
+  if (!form.stock_code) return false
+  return favorites.value.some(f => f.stock_code === form.stock_code)
+})
+
+const loadFavorites = async () => {
+  try {
+    const res = await watchlistAPI.getWatchlist()
+    favorites.value = res
+  } catch (e) {
+    console.error('加载收藏列表失败', e)
   }
 }
 
+const toggleFavorite = async () => {
+  if (!form.stock_code) return
+  try {
+    if (isFavorite.value) {
+      await watchlistAPI.removeFromWatchlist(form.stock_code)
+      ElMessage.success('已取消收藏')
+    } else {
+      await watchlistAPI.addToWatchlist(form.stock_code)
+      ElMessage.success('已收藏')
+    }
+    loadFavorites()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
+}
+
+const handleFavoriteSelect = (fav: WatchlistItem) => {
+  form.stock_code = fav.stock_code
+}
+
+const saveForm = reactive({
+  name: '',
+  description: '',
+  is_default: false
+})
+
+// 计算属性
 const canOptimize = computed(() => {
   return form.stock_code && form.strategy_name && Object.keys(paramRanges).length > 0
 })
 
-// 加载策略列表
-const loadStrategies = async () => {
-  try {
-    const response = await strategyAPI.listStrategies()
-    strategies.value = response.strategies
-  } catch (error: any) {
-    ElMessage.error('加载策略列表失败')
-  }
-}
-
-// 搜索股票
+// 方法
 const searchStocks = async (queryString: string, cb: (results: any[]) => void) => {
   if (!queryString) {
     cb([])
@@ -225,11 +542,13 @@ const searchStocks = async (queryString: string, cb: (results: any[]) => void) =
 
 const handleStockSelect = (item: any) => {
   form.stock_code = item.code
+  if (form.strategy_name) {
+    loadParamSets()
+  }
 }
 
 const handleStrategyChange = async (strategyName: string) => {
   result.value = null
-  // 清空现有范围
   Object.keys(paramRanges).forEach(k => delete paramRanges[k])
 
   if (!strategyInfoMap.value[strategyName]) {
@@ -244,93 +563,210 @@ const handleStrategyChange = async (strategyName: string) => {
 
   const info = strategyInfoMap.value[strategyName]
   if (info && info.parameter_descriptions) {
-    for (const [key, desc] of Object.entries(info.parameter_descriptions)) {
-      // 尝试解析默认值作为参考
-      let defVal = 1
-      if (typeof desc === 'string' && desc.includes('默认')) {
-         const match = desc.match(/默认[:\s]*([0-9.]+)/)
-         if (match) defVal = parseFloat(match[1])
-      }
-
-      // 设置默认范围：0.5x ~ 2.0x
-      // 如果是整数参数，取整
+    for (const [key] of Object.entries(info.parameter_descriptions)) {
+      const defVal = info.parameters?.[key] || 1
       const minVal = Math.floor(defVal * 0.5) || 1
       const maxVal = Math.ceil(defVal * 2.0) || (defVal + 10)
-
       paramRanges[key] = [minVal, maxVal]
     }
+  }
+
+  if (form.stock_code) {
+    loadParamSets()
   }
 }
 
 const handleOptimize = async () => {
+  if (!dateRange.value || !dateRange.value[0] || !dateRange.value[1]) {
+    ElMessage.warning('请选择日期范围')
+    return
+  }
+
   optimizing.value = true
+  optimizingProgress.value = 0
+  optimizingStatusText.value = '初始化中...'
+  optimizingElapsedTime.value = 0
+  optimizingEstimatedRemaining.value = 0
+  optimizingBestScore.value = null
+  optimizingStartTime.value = Date.now()
   result.value = null
+
+  // 启动计时器
+  const totalIterations = form.max_iter
+  let currentIteration = 0
+  
+  optimizingTimer.value = window.setInterval(() => {
+    const elapsed = (Date.now() - optimizingStartTime.value) / 1000
+    optimizingElapsedTime.value = elapsed
+    
+    // 估算进度（基于已用时间）
+    const estimatedTimePerIter = totalIterations > 0 ? (elapsed / Math.max(currentIteration, 1)) : 2
+    currentIteration = Math.min(Math.floor(elapsed / estimatedTimePerIter), totalIterations)
+    optimizingProgress.value = Math.min((currentIteration / totalIterations) * 100, 95)
+    optimizingStatusText.value = `第 ${currentIteration} / ${totalIterations} 次迭代`
+    
+    // 估算剩余时间
+    const remainingIters = totalIterations - currentIteration
+    optimizingEstimatedRemaining.value = remainingIters * estimatedTimePerIter
+  }, 500)
+
   try {
     const res = await strategyAPI.optimizeStrategy(
       form.stock_code,
       form.strategy_name,
       paramRanges,
-      form.start_date || undefined,
-      form.end_date || undefined,
+      dateRange.value[0],
+      dateRange.value[1],
       form.target_metric,
       'pso',
       form.num_particles,
       form.max_iter
     )
-    result.value = res
-    ElMessage.success('优化完成')
+    
+    // 清除定时器
+    if (optimizingTimer.value) {
+      clearInterval(optimizingTimer.value)
+      optimizingTimer.value = null
+    }
+    
+    optimizingProgress.value = 100
+    optimizingStatusText.value = '优化完成'
+    
+    setTimeout(() => {
+      console.log('优化结果:', res)
+      console.log('是否有日志:', res.optimization_logs)
+      console.log('是否有收敛曲线:', res.convergence_curve)
+      result.value = res
+      ElMessage.success('优化完成')
+    }, 300)
   } catch (e: any) {
+    if (optimizingTimer.value) {
+      clearInterval(optimizingTimer.value)
+      optimizingTimer.value = null
+    }
     ElMessage.error(e.response?.data?.detail || '优化失败')
   } finally {
-    optimizing.value = false
+    setTimeout(() => {
+      optimizing.value = false
+      optimizingProgress.value = 0
+      optimizingStatusText.value = '准备中...'
+      optimizingElapsedTime.value = 0
+      optimizingEstimatedRemaining.value = 0
+      optimizingBestScore.value = null
+    }, 500)
   }
 }
 
-const saveParams = async () => {
-  if (!result.value || !result.value.best_params) return
+const showSaveDialog = () => {
+  const now = new Date()
+  const dateStr = now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, '0') +
+    String(now.getDate()).padStart(2, '0') +
+    String(now.getHours()).padStart(2, '0') +
+    String(now.getMinutes()).padStart(2, '0')
+  
+  saveForm.name = dateStr
+  saveForm.description = `使用${form.target_metric}优化，得分${result.value.best_score.toFixed(4)}`
+  saveForm.is_default = false
+  saveDialogVisible.value = true
+}
+
+const handleSaveParamSet = async () => {
+  if (!saveForm.name) {
+    ElMessage.warning('请输入参数集名称')
+    return
+  }
+
   saving.value = true
   try {
-    await strategyAPI.saveParams(
-      form.stock_code,
-      form.strategy_name,
-      result.value.best_params
-    )
-    ElMessage.success('参数保存成功')
+    await paramSetsAPI.createParamSet({
+      stock_code: form.stock_code,
+      strategy_name: form.strategy_name,
+      name: saveForm.name,
+      description: saveForm.description,
+      params: result.value.best_params,
+      param_ranges: paramRanges,
+      target_metric: form.target_metric,
+      best_score: result.value.best_score,
+      optimization_method: 'pso',
+      num_particles: form.num_particles,
+      max_iter: form.max_iter,
+      date_range: dateRange.value && dateRange.value[0] && dateRange.value[1] 
+        ? `${new Date(dateRange.value[0]).toISOString().split('T')[0]} 至 ${new Date(dateRange.value[1]).toISOString().split('T')[0]}`
+        : '',
+      is_default: saveForm.is_default
+    })
+    
+    ElMessage.success('保存成功')
+    saveDialogVisible.value = false
+    await loadParamSets()
   } catch (e: any) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     saving.value = false
   }
 }
 
-// Helpers
+const loadParamSets = async () => {
+  if (!form.stock_code || !form.strategy_name) return
+  
+  try {
+    const res = await paramSetsAPI.getParamSets(form.stock_code, form.strategy_name)
+    paramSets.value = res.param_sets
+  } catch (e: any) {
+    console.error(e)
+  }
+}
+
+const loadParamSet = (set: ParamSet) => {
+  // 加载参数到配置
+  if (set.param_ranges) {
+    Object.keys(paramRanges).forEach(k => delete paramRanges[k])
+    Object.assign(paramRanges, set.param_ranges)
+  }
+  
+  ElMessage.success(`已加载参数集："${set.name}"`)
+}
+
+const setDefaultParamSet = async (set: ParamSet) => {
+  try {
+    await paramSetsAPI.setDefaultParamSet(set.id, form.stock_code, form.strategy_name)
+    ElMessage.success('已设为默认')
+    await loadParamSets()
+  } catch (e: any) {
+    ElMessage.error('设置失败')
+  }
+}
+
+const deleteParamSet = async (set: ParamSet) => {
+  try {
+    await ElMessageBox.confirm(`确定删除参数集"${set.name}"吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    
+    await paramSetsAPI.deleteParamSet(set.id)
+    ElMessage.success('删除成功')
+    await loadParamSets()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
 const getParameterLabel = (key: string): string => {
   const info = strategyInfoMap.value[form.strategy_name]
   if (info?.parameter_descriptions?.[key]) {
-    const desc = info.parameter_descriptions[key]
-    if (typeof desc === 'object' && (desc as any).label) {
-      return (desc as any).label
-    }
+    return key
   }
-
   const labelMap: Record<string, string> = {
     'short_period': '短期周期',
     'long_period': '长期周期',
     'period': '周期',
-    'std_dev': '标准差倍数',
-    'oversold': '超卖阈值',
-    'overbought': '超买阈值',
   }
   return labelMap[key] || key
-}
-
-const getParameterDescription = (key: string): string => {
-  const info = strategyInfoMap.value[form.strategy_name]
-  if (info?.parameter_descriptions?.[key]) {
-    const desc = info.parameter_descriptions[key]
-    return typeof desc === 'string' ? desc : (desc as any).description || ''
-  }
-  return ''
 }
 
 const getMetricLabel = (val: string) => {
@@ -343,137 +779,672 @@ const getMetricLabel = (val: string) => {
   return map[val] || val
 }
 
-onMounted(() => {
-  loadStrategies()
+const formatDate = (dateStr: string) => {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('zh-CN')
+}
+
+const formatDateTime = (dateStr: string) => {
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+}
+
+//计算参数在区间中的位置百分比
+const getMarkerPosition = (min: number, max: number, value: number) => {
+  if (max === min) return 50
+  return ((value - min) / (max - min)) * 100
+}
+
+// 格式化时间（秒）为 mm:ss 或 hh:mm:ss
+const formatElapsedTime = (seconds: number) => {
+  if (seconds < 0) return '00:00'
+  
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+  
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+  return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+}
+
+// Chart variables
+let chart: IChartApi | null = null
+let areaSeries: ISeriesApi<"Area"> | null = null
+const chartContainer = ref<HTMLElement | null>(null)
+
+// 绘制收敛曲线
+const drawConvergenceCurve = () => {
+  if (!chartContainer.value || !result.value?.convergence_curve) return
+  
+  const data = result.value.convergence_curve
+  console.log('绘制收敛曲线 (Lightweight Charts), 数据:', data)
+
+  // 1. Dispose old chart if exists
+  if (chart) {
+    chart.remove()
+    chart = null
+  }
+
+  // 2. Create Chart
+  chart = createChart(chartContainer.value, {
+    layout: {
+      background: { type: ColorType.Solid, color: isDark.value ? '#1e1e1e' : '#ffffff' },
+      textColor: isDark.value ? '#d1d4dc' : '#333',
+    },
+    grid: {
+      vertLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
+      horzLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
+    },
+    width: chartContainer.value.clientWidth,
+    height: 300,
+    timeScale: {
+      visible: true,
+      // 移除 timeVisible 和 secondsVisible，避免与自定义Formatter冲突
+      // 当数据仅仅是1,2,3秒时，禁显示秒会导致刻度消失
+      tickMarkFormatter: (time: number) => {
+        return String(time)
+      },
+    },
+    localization: {
+      timeFormatter: (time: number) => {
+        return `迭代 ${time}`
+      }
+    },
+     rightPriceScale: {
+      borderVisible: false,
+    },
+  })
+
+  // 3. Add Series
+  areaSeries = chart.addSeries(AreaSeries, {
+    lineColor: '#2962FF', 
+    topColor: '#2962FF',
+    bottomColor: 'rgba(41, 98, 255, 0.28)',
+  })
+
+  // 4. Set Data
+  // Lightweight charts expects data to be sorted by time. 
+  // For convergence, we use iteration index as "time".
+  // Note: time must be distinct.
+  const chartData = data.map((val, index) => ({
+    time: (index + 1) as any, // Use index+1 as generic time
+    value: val
+  }))
+  
+  areaSeries.setData(chartData)
+  
+  // 5. Fit content
+  chart.timeScale().fitContent()
+
+  // 6. Resize Observer
+  if (chartContainer.value) {
+    const resizeObserver = new ResizeObserver(entries => {
+      if (entries.length === 0 || !entries[0].contentRect) return
+      if (chart) {
+        chart.applyOptions({ 
+          width: entries[0].contentRect.width,
+          height: entries[0].contentRect.height 
+        })
+      }
+    })
+    resizeObserver.observe(chartContainer.value)
+    
+    // Cleanup observer on chart dispose (attach to chart object or external var?)
+    // Simpler: keep a global ref
+    if ((window as any).__convergenceChartResizeObserver) {
+      (window as any).__convergenceChartResizeObserver.disconnect()
+    }
+    ;(window as any).__convergenceChartResizeObserver = resizeObserver
+  }
+}
+
+// 监听result变化，绘制图表
+watch(() => result.value, async (newResult) => {
+  if (newResult && newResult.convergence_curve && newResult.convergence_curve.length > 0) {
+    console.log('监听到结果变化，准备绘制收敛曲线')
+    await nextTick()
+    // 再次等待以确保v-if渲染完成
+    setTimeout(() => {
+      drawConvergenceCurve()
+    }, 50)
+  }
+}, { deep: true })
+
+// 监听主题变化更新图表
+watch(isDark, () => {
+  if (chart) {
+    chart.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: isDark.value ? '#1e1e1e' : '#ffffff' },
+        textColor: isDark.value ? '#d1d4dc' : '#333',
+      },
+      grid: {
+        vertLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
+        horzLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
+      },
+    })
+  }
+})
+
+// 组件卸载时清理
+onUnmounted(() => {
+  if (chart) {
+    chart.remove()
+    chart = null
+  }
+  if ((window as any).__convergenceChartResizeObserver) {
+    (window as any).__convergenceChartResizeObserver.disconnect()
+    ;(window as any).__convergenceChartResizeObserver = null
+  }
+})
+
+// 初始化
+onMounted(async () => {
+  try {
+    const response = await strategyAPI.listStrategies()
+    strategies.value = response.strategies
+  } catch (error: any) {
+    ElMessage.error('加载策略列表失败')
+  }
+  
+  loadParamSets()
+  loadFavorites()
+  
+  // 设置默认日期范围
+  const end = new Date()
+  const start = new Date()
+  start.setMonth(start.getMonth() - 6)
+  dateRange.value = [start.toISOString().split('T')[0], end.toISOString().split('T')[0]]
 })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .strategy-optimization {
-  max-width: 1000px;
-  margin: 0 auto;
+  height: 100%;
+  padding: 0;
 }
 
+.optimization-container {
+  display: flex;
+  gap: 20px;
+  height: 100%;
+}
+
+// 配置面板
+.config-panel {
+  width: 350px;
+  flex-shrink: 0;
+}
+
+.config-card {
+  height: 100%;
+  overflow-y: auto;
+  
+  .stock-input-group {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+}
+
+// 中间结果区域
+.result-section {
+  flex: 1;
+  min-width: 400px;
+}
+
+.result-card {
+  height: 100%;
+}
+
+// 右侧参数库
+.library-section {
+  width: 300px;
+  flex-shrink: 0;
+}
+
+.library-card {
+  height: 100%;
+  overflow-y: auto;
+}
+
+// 卡片头部
 .card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  font-weight: bold;
+  gap: 8px;
+  font-weight: 600;
+  
+  .el-icon {
+    font-size: 18px;
+  }
+  
+  span:last-child {
+    margin-left: auto;
+  }
 }
 
-.form-hint {
-  font-size: 12px;
-  color: #909399;
-  line-height: 1.5;
-  margin-top: 4px;
-}
-
+// 参数范围配置
 .param-ranges {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
-  padding: 10px 0;
+  .param-range-item {
+    margin-bottom: 12px;
+    
+    .label {
+      font-size: 13px;
+      color: var(--el-text-color-regular);
+      margin-bottom: 6px;
+    }
+    
+    .range-inputs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      
+      .el-input-number {
+        flex: 1;
+      }
+      
+      span {
+        color: var(--el-text-color-secondary);
+      }
+    }
+  }
 }
 
-.range-item {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 4px;
+// 优化中状态
+.optimizing-state {
+  padding: 40px 30px;
+  
+  .progress-header {
+    text-align: center;
+    margin-bottom: 30px;
+    
+    h3 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+      margin: 0 0 10px 0;
+    }
+    
+    .progress-meta {
+      font-size: 14px;
+      color: var(--el-text-color-secondary);
+      
+      span:nth-child(2) {
+        margin: 0 8px;
+      }
+    }
+  }
+  
+  .progress-bar-container {
+    margin-bottom: 30px;
+    
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      
+      .percentage {
+        font-size: 24px;
+        font-weight: bold;
+        color: var(--el-color-primary);
+      }
+      
+      .status {
+        font-size: 14px;
+        color: var(--el-text-color-secondary);
+      }
+    }
+  }
+  
+  .progress-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    
+    .stat-item {
+      background: var(--el-fill-color-light);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      
+      .stat-label {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+        margin-bottom: 8px;
+      }
+      
+      .stat-value {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--el-text-color-primary);
+      }
+    }
+  }
 }
 
-html.dark .range-item {
-  background: #2d2d2d;
-}
-
-.range-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 10px;
-  font-weight: 500;
-  color: #606266;
-}
-
-.range-inputs {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.separator {
-  color: #909399;
-}
-
-.empty-params {
-  color: #909399;
-  text-align: center;
+// 优化结果
+.result-content {
   padding: 20px;
-  background: #f8f9fa;
-  border-radius: 4px;
+  
+  .best-score {
+    text-align: center;
+    padding: 20px;
+    background: var(--el-fill-color-light);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    
+    .score-label {
+      font-size: 14px;
+      color: var(--el-text-color-secondary);
+      margin-bottom: 8px;
+    }
+    
+    .score-value {
+      font-size: 36px;
+      font-weight: bold;
+      color: var(--el-color-primary);
+      margin-bottom: 8px;
+    }
+    
+    .score-meta {
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+  
+  // 收敛曲线
+  .convergence-chart-section {
+    margin-bottom: 20px;
+    
+    h4 {
+      font-size: 14px;
+      color: var(--el-text-color-primary);
+      margin: 0 0 12px 0;
+    }
+    
+    .chart-wrapper {
+      background: var(--el-fill-color-light);
+      border-radius: 8px;
+      padding: 15px;
+      
+      .convergence-chart {
+        width: 100%;
+        height: 200px;
+        display: block;
+      }
+    }
+  }
+  
+  // 优化日志
+  .optimization-logs {
+    margin-bottom: 20px;
+    
+    h4 {
+      font-size: 14px;
+      color: var(--el-text-color-primary);
+      margin: 0 0 12px 0;
+    }
+    
+    .logs-container {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      max-height: 300px;
+      overflow-y: auto;
+      
+      .log-line {
+        padding: 2px 0;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.05);
+        }
+      }
+      
+      /* 滚动条样式 */
+      &::-webkit-scrollbar {
+        width: 8px;
+      }
+      
+      &::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+      }
+      
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.3);
+        }
+      }
+    }
+  }
+  
+  h4 {
+    font-size: 14px;
+    color: var(--el-text-color-primary);
+    margin: 16px 0 12px;
+  }
+  
+  .best-params {
+    .params-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    
+    .param-chip {
+      background: var(--el-color-primary-light-9);
+      border: 1px solid var(--el-color-primary-light-8);
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 13px;
+      
+      .key {
+        color: var(--el-text-color-regular);
+        margin-right: 4px;
+      }
+      
+      .value {
+        color: var(--el-color-primary);
+        font-weight: 600;
+      }
+    }
+  }
+  
+  .param-ranges-info {
+    .ranges-list {
+      font-size: 13px;
+      
+      .range-info {
+        padding: 4px 0;
+        display: flex;
+        justify-content: space-between;
+        
+        .key {
+          color: var(--el-text-color-regular);
+        }
+        
+        .range {
+          color: var(--el-text-color-secondary);
+          font-family: monospace;
+        }
+      }
+    }
+  }
 }
 
-html.dark .empty-params {
-  background: #2d2d2d;
+// 参数集列表
+.param-sets-list {
+  .param-set-card {
+    background: var(--el-fill-color-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+    
+    &:hover {
+      background: var(--el-fill-color);
+      border-color: var(--el-color-primary-light-7);
+      transform: translateY(-2px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    &.is-default {
+      border-color: var(--el-color-success);
+      background: var(--el-color-success-light-9);
+    }
+    
+    .set-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      
+      .set-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--el-text-color-primary);
+      }
+    }
+    
+    .set-score {
+      font-size: 13px;
+      margin-bottom: 8px;
+      
+      .label {
+        color: var(--el-text-color-secondary);
+      }
+      
+      .value {
+        color: var(--el-color-primary);
+        font-weight: 600;
+        margin-left: 4px;
+      }
+    }
+    
+    .set-date-range {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      
+      .el-icon {
+        font-size: 14px;
+      }
+    }
+    
+    .set-params {
+      margin-bottom: 6px;
+      
+      .params-title {
+        font-size: 11px;
+        color: var(--el-text-color-secondary);
+        margin-bottom: 4px;
+      }
+      
+      .params-content {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      
+      .param-tag {
+        font-size: 11px;
+        background: var(--el-color-info-light-9);
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: var(--el-text-color-regular);
+      }
+    }
+    
+    .set-ranges {
+      margin-bottom: 6px;
+      
+      .ranges-title {
+        font-size: 11px;
+        color: var(--el-text-color-secondary);
+        margin-bottom: 4px;
+      }
+      
+      .ranges-content {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      
+      .range-tag {
+        font-size: 11px;
+        background: var(--el-fill-color);
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: var(--el-text-color-secondary);
+        font-family: monospace;
+      }
+    }
+    
+    .set-time {
+      font-size: 11px;
+      color: var(--el-text-color-placeholder);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      
+      .el-icon {
+        font-size: 12px;
+      }
+    }
+    
+    .set-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--el-border-color-lighter);
+    }
+  }
 }
 
+// 股票、策略选项样式
 .stock-code {
   font-weight: bold;
   margin-right: 8px;
 }
 
 .stock-name {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
-.result-content {
-  text-align: center;
-  padding: 20px;
-}
-
-.score-display {
-  margin-bottom: 30px;
-}
-
-.score-display .label {
-  font-size: 14px;
-  color: #909399;
-  margin-bottom: 5px;
-}
-
-.score-display .value {
-  font-size: 36px;
-  font-weight: bold;
-  color: #409eff;
-}
-
-.best-params h3 {
-  font-size: 16px;
-  color: #303133;
-  margin-bottom: 15px;
-}
-
-.params-grid {
+.strategy-option {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 20px;
-}
-
-.param-item {
-  background: #ecf5ff;
-  border: 1px solid #d9ecff;
-  padding: 10px 20px;
-  border-radius: 20px;
-  color: #409eff;
-}
-
-.param-item .key {
-  margin-right: 8px;
-  font-weight: 500;
-}
-
-.param-item .val {
-  font-weight: bold;
+  flex-direction: column;
+  
+  .desc {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    margin-top: 2px;
+  }
 }
 </style>

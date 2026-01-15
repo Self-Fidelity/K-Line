@@ -13,6 +13,7 @@ from backend.app.models.strategy import (
     StrategyAnalyzeResponse,
     StrategyCompareRequest,
     StrategyCompareResponse,
+    OptimizeResponse,  # 新增
 )
 from backend.app.services.strategy_service import StrategyService
 
@@ -217,24 +218,28 @@ async def get_strategy_params(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/optimize", response_model=OptimizeResponse)
-async def optimize_strategy(
-    request: OptimizeRequest,
-    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
-):
-    """优化策略参数"""
+@router.post("/optimize")  # 移除response_model以避免字段过滤
+async def optimize_strategy(request: OptimizeRequest):
+    """
+    优化策略参数
+    """
     try:
-        result = strategy_service.optimize_strategy(
+        result = strategy_service.optimize_strategy(  # 移除await
             stock_code=request.stock_code,
             strategy_name=request.strategy_name,
+            param_ranges=request.param_ranges,
             start_date=request.start_date,
             end_date=request.end_date,
-            param_ranges=request.param_ranges,
-            method=request.method,
             target_metric=request.target_metric,
+            method=request.method,
             num_particles=request.num_particles,
             max_iter=request.max_iter
         )
-        return OptimizeResponse(**result)
+        
+        print(f"优化完成，返回结果: {result}")
+        # 直接返回字典，不经过Pydantic模型验证
+        return result
+        
     except Exception as e:
+        print(f"参数优化失败: {e}")  # 使用print替代logger
         raise HTTPException(status_code=500, detail=str(e))
