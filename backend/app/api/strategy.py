@@ -1,7 +1,9 @@
 """策略分析API"""
 
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+import uuid
+from src.strategy.progress_manager import progress_manager
 
 from backend.app.api.auth import get_current_user_id
 from typing import Dict, Any, List
@@ -218,13 +220,21 @@ async def get_strategy_params(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/optimize")  # 移除response_model以避免字段过滤
-async def optimize_strategy(request: OptimizeRequest):
+@router.post("/optimize")
+async def optimize_strategy(
+    request: OptimizeRequest, 
+    background_tasks: BackgroundTasks
+):
     """
-    优化策略参数
+    优化策略参数（异步）
     """
     try:
-        result = strategy_service.optimize_strategy(  # 移除await
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 在后台运行优化任务
+        background_tasks.add_task(
+            strategy_service.optimize_strategy,
             stock_code=request.stock_code,
             strategy_name=request.strategy_name,
             param_ranges=request.param_ranges,
@@ -233,13 +243,23 @@ async def optimize_strategy(request: OptimizeRequest):
             target_metric=request.target_metric,
             method=request.method,
             num_particles=request.num_particles,
-            max_iter=request.max_iter
+            max_iter=request.max_iter,
+            task_id=task_id
         )
         
-        print(f"优化完成，返回结果: {result}")
-        # 直接返回字典，不经过Pydantic模型验证
-        return result
+        # 立即返回任务ID
+        return {"task_id": task_id, "status": "submitted"}
         
     except Exception as e:
-        print(f"参数优化失败: {e}")  # 使用print替代logger
+        print(f"提交优化任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/optimize/progress/{task_id}")
+async def get_optimization_progress(task_id: str):
+    """获取优化进度"""
+    progress = progress_manager.get_progress(task_id)
+    if not progress:
+        # 任务可能不存在或已过期
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return progress

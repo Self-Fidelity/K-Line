@@ -29,14 +29,16 @@ class OptimizationProgressManager:
                 'best_score': None,
                 'start_time': time.time(),
                 'status': 'running',
-                'estimated_time_remaining': None
+                'estimated_time_remaining': None,
+                'logs': []
             }
     
     def update_progress(
         self, 
         task_id: str, 
         current_iteration: int, 
-        best_score: float
+        best_score: float,
+        log_message: Optional[str] = None
     ):
         """更新进度"""
         with self._store_lock:
@@ -47,6 +49,9 @@ class OptimizationProgressManager:
             progress['current_iteration'] = current_iteration
             progress['best_score'] = best_score
             
+            if log_message:
+                progress['logs'].append(log_message)
+            
             # 估算剩余时间
             elapsed_time = time.time() - progress['start_time']
             if current_iteration > 0:
@@ -54,7 +59,13 @@ class OptimizationProgressManager:
                 remaining_iterations = progress['total_iterations'] - current_iteration
                 progress['estimated_time_remaining'] = time_per_iteration * remaining_iterations
     
-    def finish_optimization(self, task_id: str, best_params: dict, best_score: float):
+    def finish_optimization(
+        self, 
+        task_id: str, 
+        best_params: dict, 
+        best_score: float, 
+        full_result: Optional[Dict] = None
+    ):
         """完成优化"""
         with self._store_lock:
             if task_id not in self._progress_store:
@@ -65,6 +76,10 @@ class OptimizationProgressManager:
             progress['best_params'] = best_params
             progress['best_score'] = best_score
             progress['total_time'] = time.time() - progress['start_time']
+            
+            # Store full result (charts, logs, etc.)
+            if full_result:
+                progress['result'] = full_result
     
     def fail_optimization(self, task_id: str, error: str):
         """优化失败"""

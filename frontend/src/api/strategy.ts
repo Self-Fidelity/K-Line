@@ -98,6 +98,19 @@ export interface StrategyCompareResponse {
   results: any[] // 实际上是包含多个 analyze response
 }
 
+// New interfaces for optimization
+export interface OptimizeRequest {
+  stock_code: string
+  strategy_name: string
+  param_ranges: Record<string, any[]>
+  start_date?: string
+  end_date?: string
+  target_metric?: string
+  method?: string
+  num_particles?: number
+  max_iter?: number
+}
+
 export const strategyAPI = {
   listStrategies: async (): Promise<StrategyListResponse> => {
     const response = await apiClient.get<StrategyListResponse>('/api/strategy/list')
@@ -105,7 +118,7 @@ export const strategyAPI = {
   },
 
   getStrategyInfo: async (strategyName: string): Promise<StrategyInfo> => {
-    const response = await apiClient.get<StrategyInfo>(`/api/strategy/${strategyName}/info`)
+    const response = await apiClient.get<StrategyInfo>(`/api/strategy/${encodeURIComponent(strategyName)}/info`)
     return response.data
   },
 
@@ -144,30 +157,13 @@ export const strategyAPI = {
     return response.data.params
   },
 
-  optimizeStrategy: async (
-    stockCode: string,
-    strategyName: string,
-    paramRanges: Record<string, any[]>,
-    startDate?: string,
-    endDate?: string,
-    targetMetric = 'sharpe_ratio',
-    method = 'pso',
-    numParticles = 10,
-    maxIter = 20
-  ) => {
-    const response = await apiClient.post('/api/strategy/optimize', {
-      stock_code: stockCode,
-      strategy_name: strategyName,
-      param_ranges: paramRanges,
-      start_date: startDate,
-      end_date: endDate,
-      target_metric: targetMetric,
-      method,
-      num_particles: numParticles,
-      max_iter: maxIter,
-    }, {
-      timeout: 300000  // 5分钟超时，优化可能需要较长时间
-    })
+  optimizeStrategy: async (data: OptimizeRequest): Promise<{ task_id: string; status: string }> => {
+    const response = await apiClient.post<{ task_id: string; status: string }>('/api/strategy/optimize', data)
+    return response.data
+  },
+
+  getOptimizationProgress: async (taskId: string): Promise<any> => {
+    const response = await apiClient.get<any>(`/api/strategy/optimize/progress/${taskId}`)
     return response.data
   },
 }

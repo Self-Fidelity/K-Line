@@ -165,10 +165,42 @@
         >
           <div v-if="strategyParamsMap[strategyName]">
              <div class="params-header">
-               <el-button size="small" type="primary" link @click="saveParams(strategyName)">
-                 <el-icon><Check /></el-icon> 保存当前参数
-               </el-button>
-               <el-button size="small" type="success" link @click="openOptimizeDialog(strategyName)">
+               <el-popover
+                 placement="bottom"
+                 :width="350"
+                 trigger="click"
+                 @show="loadSavedParams(strategyName)"
+               >
+                 <template #reference>
+                   <el-button size="small" type="primary" link>
+                     <el-icon><Download /></el-icon> 加载优化参数
+                   </el-button>
+                 </template>
+                 
+                 <div v-loading="loadingParamSets[strategyName]">
+                   <div v-if="availableParamSets[strategyName] && availableParamSets[strategyName].length > 0">
+                     <div 
+                       v-for="set in availableParamSets[strategyName]" 
+                       :key="set.id" 
+                       class="param-set-item"
+                       style="padding: 8px; cursor: pointer; border-bottom: 1px solid var(--el-border-color-lighter);"
+                       @click="applyParamSet(strategyName, set)"
+                     >
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="font-weight: bold;">{{ set.name }}</span>
+                            <span style="color: var(--el-color-success); font-size: 13px;">
+                               {{ getParamMetricLabel(set.target_metric) }}: {{ set.best_score?.toFixed(2) }}
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--el-text-color-secondary);">
+                            {{ set.date_range || '无日期范围' }}
+                        </div>
+                     </div>
+                   </div>
+                   <el-empty v-else description="暂无优化记录" :image-size="60" />
+                 </div>
+               </el-popover>
+               <el-button size="small" type="success" link @click="goToOptimization(strategyName)">
                  <el-icon><Setting /></el-icon> 智能参数优化
                </el-button>
              </div>
@@ -207,38 +239,7 @@
       </div>
     </el-card>
 
-    <!-- 优化对话框 -->
-    <el-dialog
-      v-model="optimizeDialogVisible"
-      title="参数优化 (PSO)"
-      width="500px"
-    >
-      <el-form label-width="120px">
-        <el-form-item label="粒子数量">
-          <el-input-number v-model="optimizeForm.num_particles" :min="5" :max="50" />
-        </el-form-item>
-        <el-form-item label="迭代次数">
-          <el-input-number v-model="optimizeForm.max_iter" :min="5" :max="100" />
-        </el-form-item>
-        <div class="ranges-config">
-          <p>参数范围配置:</p>
-          <div v-for="(range, key) in optimizeForm.param_ranges" :key="key" class="range-item">
-            <span>{{ getParameterLabel(key, currentOptimizingStrategy) }}</span>
-            <el-input-number v-model="range[0]" size="small" style="width: 100px" placeholder="Min" />
-            <span>-</span>
-            <el-input-number v-model="range[1]" size="small" style="width: 100px" placeholder="Max" />
-          </div>
-        </div>
-      </el-form>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="optimizeDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleOptimize" :loading="optimizing">
-            开始优化
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
+
 
     <!-- 比较结果 -->
     <el-card v-if="compareResult" style="margin-top: 20px">
@@ -441,11 +442,12 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Picture, Trophy, Download, Collection, Star, StarFilled, Setting, Check } from '@element-plus/icons-vue'
+import { Search, Picture, Trophy, Download, Collection, Star, StarFilled, Setting } from '@element-plus/icons-vue'
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
+import { paramSetsAPI, type ParamSet } from '@/api/param-sets'
 import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
 
 const router = useRouter()
@@ -471,21 +473,15 @@ const compareForm = reactive<StrategyCompareRequest>({
 })
 
 const strategyParamsMap = reactive<Record<string, Record<string, any>>>({})
-const optimizing = ref(false)
-const optimizeDialogVisible = ref(false)
-const currentOptimizingStrategy = ref('')
-const optimizeForm = reactive({
-  param_ranges: {} as Record<string, any[]>,
-  num_particles: 10,
-  max_iter: 10
-})
+const loadingParamSets = ref<Record<string, boolean>>({})
+const availableParamSets = ref<Record<string, ParamSet[]>>({})
 
 // 日期快捷选项
 const dateShortcuts = [
-  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
-  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
-  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
-  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
+  { text: '最近1个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
+  { text: '最近3个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
+  { text: '最近6个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
+  { text: '最近1年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
 ]
 
 // 默认参数配置
@@ -493,7 +489,7 @@ const defaultParams: Record<string, Record<string, number>> = {
   'MA Strategy': { short_period: 5, long_period: 20 },
   'RSI Strategy': { period: 14, overbought: 70, oversold: 30 },
   'MACD Strategy': { fast_period: 12, slow_period: 26, signal_period: 9 },
-  'Bollinger Strategy': { period: 20, num_std: 2 },
+  'Bollinger Strategy': { period: 20, std_dev: 2 },
   'Momentum Strategy': { period: 10 },
 }
 
@@ -782,60 +778,67 @@ const handleViewChart = () => {
   }
 }
 
-// 保存参数
-const saveParams = async (strategyName: string) => {
+// 加载保存的参数
+const loadSavedParams = async (strategyName: string) => {
+  if (!compareForm.stock_code) {
+    ElMessage.warning('请先选择股票')
+    return
+  }
+  
+  loadingParamSets.value[strategyName] = true
+  try {
+    const res = await paramSetsAPI.getParamSets(compareForm.stock_code, strategyName)
+    availableParamSets.value[strategyName] = res.param_sets
+  } catch (e: any) {
+    ElMessage.error('加载参数记录失败')
+  } finally {
+    loadingParamSets.value[strategyName] = false
+  }
+}
+
+// 应用参数集
+const applyParamSet = (strategyName: string, set: ParamSet) => {
+  if (!strategyParamsMap[strategyName]) {
+    strategyParamsMap[strategyName] = {}
+  }
+  Object.keys(strategyParamsMap[strategyName]).forEach(k => delete strategyParamsMap[strategyName][k])
+  Object.assign(strategyParamsMap[strategyName], set.params)
+  ElMessage.success(`已应用参数: ${set.name}`)
+}
+
+const formatNumber = (num: number) => {
+  return num?.toFixed(2)
+}
+
+const getColorClass = (val: number) => {
+  if (!val) return ''
+  return val >= 0 ? 'up' : 'down'
+}
+
+const getParamMetricLabel = (val: string | null) => {
+  if (!val) return '得分'
+  const map: Record<string, string> = {
+    'sharpe_ratio': '夏普比率',
+    'cumulative_return': '累计收益',
+    'sortino_ratio': '索提诺',
+    'win_rate': '胜率',
+  }
+  return map[val] || val
+}
+
+// 跳转到优化页面
+const goToOptimization = (strategyName: string) => {
     if (!compareForm.stock_code) {
         ElMessage.warning('请先选择股票')
         return
     }
-    try {
-        await strategyAPI.saveParams(compareForm.stock_code, strategyName, strategyParamsMap[strategyName])
-        ElMessage.success('参数保存成功')
-    } catch (e: any) {
-        ElMessage.error('参数保存失败: ' + e.message)
-    }
-}
-
-// 打开优化对话框
-const openOptimizeDialog = (strategyName: string) => {
-    if (!compareForm.stock_code) {
-        ElMessage.warning('请先选择股票')
-        return
-    }
-    currentOptimizingStrategy.value = strategyName
-
-    // 初始化范围
-    optimizeForm.param_ranges = {}
-    const currentParams = strategyParamsMap[strategyName]
-    for (const key in currentParams) {
-        const val = currentParams[key]
-        // 默认范围：0.5x ~ 2.0x
-        optimizeForm.param_ranges[key] = [Math.floor(val * 0.5) || 1, Math.ceil(val * 2.0) || 10]
-    }
-
-    optimizeDialogVisible.value = true
-}
-
-// 执行优化
-const handleOptimize = async () => {
-    optimizing.value = true
-    try {
-        const res = await strategyAPI.optimizeStrategy(
-            compareForm.stock_code,
-            currentOptimizingStrategy.value,
-            optimizeForm.param_ranges,
-            'pso'
-        )
-
-        // 应用最佳参数
-        Object.assign(strategyParamsMap[currentOptimizingStrategy.value], res.best_params)
-        ElMessage.success(`优化完成! 最佳得分(夏普): ${res.best_score.toFixed(3)}`)
-        optimizeDialogVisible.value = false
-    } catch (e: any) {
-        ElMessage.error('优化失败: ' + e.message)
-    } finally {
-        optimizing.value = false
-    }
+    router.push({
+        name: 'StrategyOptimization',
+        query: {
+            strategy: strategyName,
+            stock: compareForm.stock_code
+        }
+    })
 }
 
 // 格式化统计值

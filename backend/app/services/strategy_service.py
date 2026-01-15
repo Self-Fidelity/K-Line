@@ -426,6 +426,7 @@ class StrategyService:
         method: str = "pso",
         num_particles: int = 20,
         max_iter: int = 50,
+        task_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         优化策略参数
@@ -463,6 +464,7 @@ class StrategyService:
                 num_particles=num_particles,
                 max_iter=max_iter,
                 target_metric=target_metric,
+                task_id=task_id,
             )
         elif method == "grid":
             # 网格搜索暂不支持指定粒子数和迭代次数

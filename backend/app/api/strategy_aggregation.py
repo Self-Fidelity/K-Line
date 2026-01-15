@@ -391,7 +391,7 @@ async def analyze_aggregation(
     
     return AggregationResponse(
         stock_code=request.stock_code,
-        stock_name=None,  # TODO: Get from stock info
+        stock_name=data_service.get_stock_name(request.stock_code),
         start_date=request.start_date,
         end_date=request.end_date,
         aggregated_signals=aggregated_signals,

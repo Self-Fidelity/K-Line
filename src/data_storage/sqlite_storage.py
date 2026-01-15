@@ -108,6 +108,9 @@ class SQLiteStorage(DataStorage):
                 )
             """)
             
+            # 初始化策略聚合方案表
+            self._init_aggregation_schemes_table(cursor)
+            
             # 创建参数集索引
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_param_sets_stock_strategy
@@ -656,5 +659,128 @@ class SQLiteStorage(DataStorage):
         except Exception as e:
             logger.error(f"获取默认参数集失败: {e}", exc_info=True)
             return None
+        finally:
+            conn.close()
+
+    # ==================== 策略聚合方案管理 ====================
+
+    def _init_aggregation_schemes_table(self, cursor):
+        """初始化策略聚合方案表"""
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS aggregation_schemes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                stock_code TEXT,
+                strategies TEXT NOT NULL,
+                buy_threshold REAL NOT NULL,
+                sell_threshold REAL NOT NULL,
+                required_strategies TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_agg_schemes_name 
+            ON aggregation_schemes(name)
+        """)
+
+    def save_aggregation_scheme(
+        self,
+        name: str,
+        strategies: List[Dict[str, Any]],
+        buy_threshold: float,
+        sell_threshold: float,
+        required_strategies: List[str],
+        description: str = "",
+        stock_code: Optional[str] = None
+    ) -> Optional[int]:
+        """保存策略聚合方案"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            self._init_aggregation_schemes_table(cursor)
+            
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            sql = """
+                INSERT INTO aggregation_schemes
+                (name, description, stock_code, strategies, buy_threshold, sell_threshold, 
+                 required_strategies, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            cursor.execute(sql, (
+                name,
+                description,
+                stock_code,
+                json.dumps(strategies),
+                buy_threshold,
+                sell_threshold,
+                json.dumps(required_strategies),
+                now,
+                now
+            ))
+            
+            conn.commit()
+            scheme_id = cursor.lastrowid
+            logger.info(f"保存聚合方案成功: {name}, ID={scheme_id}")
+            return scheme_id
+            
+        except Exception as e:
+            logger.error(f"保存聚合方案失败: {e}", exc_info=True)
+            conn.rollback()
+            return None
+        finally:
+            conn.close()
+
+    def get_aggregation_schemes(self, stock_code: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取策略聚合方案列表"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            self._init_aggregation_schemes_table(cursor)
+            
+            sql = "SELECT * FROM aggregation_schemes"
+            params = []
+            
+            if stock_code:
+                sql += " WHERE stock_code = ? OR stock_code IS NULL"
+                params.append(stock_code)
+                
+            sql += " ORDER BY created_at DESC"
+            
+            cursor.execute(sql, params)
+            
+            results = []
+            for row in cursor.fetchall():
+                result = dict(row)
+                result['strategies'] = json.loads(result['strategies'])
+                result['required_strategies'] = json.loads(result['required_strategies'])
+                results.append(result)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"获取聚合方案列表失败: {e}", exc_info=True)
+            return []
+        finally:
+            conn.close()
+
+    def delete_aggregation_scheme(self, scheme_id: int) -> bool:
+        """删除策略聚合方案"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM aggregation_schemes WHERE id = ?", (scheme_id,))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"删除聚合方案失败: {e}", exc_info=True)
+            conn.rollback()
+            return False
         finally:
             conn.close()

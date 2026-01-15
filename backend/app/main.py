@@ -55,7 +55,19 @@ async def health_check():
 
 
 # 导入路由
-from backend.app.api import auth, data, strategy, chart, batch_analysis, data_update, custom_strategy, watchlist, strategy_aggregation, param_sets
+from backend.app.api import (
+    auth,
+    data,
+    strategy,
+    chart,
+    batch_analysis,
+    data_update,
+    custom_strategy,
+    watchlist,
+    strategy_aggregation,
+    param_sets,
+    aggregation_schemes
+)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(data.router, prefix="/api/data", tags=["数据"])
@@ -67,6 +79,7 @@ app.include_router(custom_strategy.router, prefix="/api/custom-strategy", tags=[
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["自选股"])
 app.include_router(strategy_aggregation.router, prefix="/api/strategy-aggregation", tags=["策略聚合"])
 app.include_router(param_sets.router, prefix="/api/strategy", tags=["参数集管理"])
+app.include_router(aggregation_schemes.router, prefix="/api/strategy/aggregation-schemes", tags=["聚合策略方案"])
 
 # 启动数据更新服务
 from backend.app.services.data_update_service import DataUpdateService

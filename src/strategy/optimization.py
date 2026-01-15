@@ -168,11 +168,13 @@ class Optimizer:
             # 更新进度
             iteration_count[0] = epoch + 1
             if task_id and hasattr(model, 'history') and hasattr(model.history, 'list_global_best_fit'):
+                # mealpy stores fitness (which we made negative for minimization)
+                # Convert back to positive score for display
                 current_score = -model.history.list_global_best_fit[-1] if model.history.list_global_best_fit else current_best_score
-                progress_manager.update_progress(task_id, epoch + 1, current_score)
+                log_msg = f"Epoch {epoch + 1}/{max_iter}, Best Score: {current_score:.4f}"
+                progress_manager.update_progress(task_id, epoch + 1, current_score, log_message=log_msg)
                 
                 # 添加日志
-                log_msg = f"Epoch {epoch + 1}/{max_iter}, Best Score: {current_score:.4f}"
                 optimization_logs.append(log_msg)
                 logger.info(log_msg)
             
@@ -216,11 +218,8 @@ class Optimizer:
             logger.info(f"优化完成: 最佳得分={best_score:.4f}, 最佳参数={best_params}")
             optimization_logs.append(f"最佳得分: {best_score:.4f}")
             
-            # 完成进度
-            if task_id:
-                progress_manager.finish_optimization(task_id, best_params, best_score)
-            
-            return {
+            # 构建完整结果
+            result = {
                 "best_params": best_params,
                 "best_score": float(best_score),
                 "method": "pso",
@@ -228,6 +227,12 @@ class Optimizer:
                 "iterations": len(convergence_history),     # 实际迭代次数
                 "optimization_logs": optimization_logs      # 优化日志
             }
+
+            # 完成进度并保存结果
+            if task_id:
+                progress_manager.finish_optimization(task_id, best_params, best_score, result)
+            
+            return result
             
         except Exception as e:
             logger.error(f"PSO优化失败: {e}", exc_info=True)

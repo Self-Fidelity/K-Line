@@ -77,4 +77,21 @@ export const dataAPI = {
     })
     return response.data
   },
+
+  getChipDistribution: async (stockCode: string, days?: number): Promise<ChipDistributionData> => {
+    const response = await apiClient.get<any>(`/api/data/stocks/${stockCode}/chip-distribution`, {
+      params: { days },
+    })
+    return {
+      bins: response.data.bins,
+      chips: response.data.chips,
+      currentPrice: response.data.current_price
+    };
+  },
+}
+
+export interface ChipDistributionData {
+  bins: number[];
+  chips: number[];
+  currentPrice: number;
 }

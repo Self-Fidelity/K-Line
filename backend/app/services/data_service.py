@@ -143,3 +143,104 @@ class DataService:
         if not data.empty:
             self.storage.save_daily_data(data, stock_code)
         return stock_code
+
+    def calculate_chip_distribution(self, stock_code: str, days: int = 120, price_precision: float = 0.1):
+        """
+        计算筹码分布 (CYQ)
+        
+        Args:
+            stock_code: 股票代码
+            days: 回溯天数 (默认最近120天)
+            price_precision: 价格区间精度 (默认0.1元)
+            
+        Returns:
+            dict: { "date": "...", "bins": [...], "chips": [...] }
+        """
+        import numpy as np
+        
+        # 1. 获取最近 N 天的数据
+        # 这里需要获取比 days 更多的数据吗？通常建议从更早开始算，但为了性能暂时取最近N天
+        # 获取足够长的历史数据，比如1年，以保证初始分布的影响较小
+        # 但 data_service 的 get_kline_data 默认取所有或指定日期。
+        # 此处我们简单实现：先获取最近 250 天数据 (约1年)
+        try:
+            # 引入 datetime
+            from datetime import datetime, timedelta
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days*2) # 多取一些确保覆盖
+            
+            start_str = start_date.strftime('%Y%m%d')
+            end_str = end_date.strftime('%Y%m%d')
+            
+            df = self.get_kline_data(stock_code, start_date=start_str, end_date=end_str)
+            if df.empty:
+                return None
+                
+            # 截取最后 days 天，但计算最好从头算
+            # 如果数据量太大，可以做截断。这里假设 df 长度适中。
+            
+            # 数据预处理
+            # 修复字段名：数据库中通常是 turnover
+            turn_col = 'turnover' if 'turnover' in df.columns else 'turn'
+            
+            if turn_col not in df.columns:
+                logger.warning(f"{stock_code} 缺少换手率数据({turn_col})，无法计算筹码分布")
+                return None
+                
+            # Tushare/Akshare 的 turnover 通常是百分比 (e.g. 1.5 代表 1.5%)
+            # 我们需要将其转换为小数 (0.015)
+            # 使用均值判断：如果均值 > 0.5，大概率是百分比（因为日换手率很少长期平均 > 50%）
+            # 或者如果最大值 > 1，也大概率是百分比
+            if df[turn_col].mean() > 0.5 or df[turn_col].max() > 5.0: 
+                df[turn_col] = df[turn_col] / 100.0
+                
+            min_price = df['low'].min() * 0.9
+            max_price = df['high'].max() * 1.1
+            
+            # Bins
+            # 为了让输出更好看，bins 应该对齐到 0.00, 0.10, 0.20
+            min_price = np.floor(min_price / price_precision) * price_precision
+            max_price = np.ceil(max_price / price_precision) * price_precision
+            
+            bins = np.arange(min_price, max_price + price_precision, price_precision)
+            chips = np.zeros(len(bins))
+            
+            # 迭代计算
+            for _, row in df.iterrows():
+                turnover = row[turn_col]
+                # 限制最大衰减，防止异常数据
+                turnover = max(0.0, min(1.0, turnover))
+                
+                high = row['high']
+                low = row['low']
+                
+                # 衰减
+                chips = chips * (1 - turnover)
+                
+                # 增加
+                start_idx = int((low - min_price) / price_precision)
+                end_idx = int((high - min_price) / price_precision)
+                
+                # 边界保护
+                start_idx = max(0, min(len(bins)-1, start_idx))
+                end_idx = max(0, min(len(bins)-1, end_idx))
+                
+                if end_idx >= start_idx:
+                    # 均匀分布
+                    count = end_idx - start_idx + 1
+                    per_chip = turnover / count
+                    chips[start_idx : end_idx + 1] += per_chip
+                    
+            # 归一化？通常不需要，total mass 代表当前流通中的筹码比例（理论上会接近 1.0）
+            # 但为了前端展示方便，可以归一化到 max = 1 或者 sum = 1
+            # 这里保持 原始值，前端如果画直方图，可能需要 max 值来定宽
+            
+            return {
+                "bins": np.round(bins, 2).tolist(),
+                "chips": chips.tolist(),
+                "current_price": df.iloc[-1]['close']
+            }
+            
+        except Exception as e:
+            logger.error(f"计算筹码分布失败: {e}", exc_info=True)
+            return None

@@ -58,6 +58,8 @@ import {
 import type { IChartApi, ISeriesApi, MouseEventParams, ISeriesMarkersPluginApi } from 'lightweight-charts';
 
 // Data Interfaces
+import ChipDistributionSeries, { type ChipDistributionData } from '@/plugins/ChipDistributionSeries';
+
 export interface ChartData {
   time: string;
   open: number;
@@ -95,6 +97,7 @@ const props = withDefaults(defineProps<{
   autosize?: boolean;
   showSubChart?: boolean; // Prop to control sub-chart visibility
   simpleLegend?: boolean; // Prop to simplify legend (hide OHLC and indicators)
+  chipData?: ChipDistributionData | null;
 }>(), {
   height: 600,
   markers: () => [],
@@ -102,8 +105,52 @@ const props = withDefaults(defineProps<{
   darkMode: false,
   autosize: false,
   showSubChart: true,
-  simpleLegend: false
+  simpleLegend: false,
+  chipData: null
 });
+
+// ... existing refs
+let candlestickSeries: ISeriesApi<"Candlestick"> | null = null;
+let cyqSeries: ChipDistributionSeries | null = null;
+
+// ... existing code ...
+
+const updateCYQ = () => {
+    if (!candlestickSeries) return;
+    
+    if (props.chipData) {
+        if (!cyqSeries) {
+            cyqSeries = new ChipDistributionSeries();
+            candlestickSeries.attachPrimitive(cyqSeries);
+        }
+        cyqSeries.setData(props.chipData);
+    } else {
+        if (cyqSeries) {
+            candlestickSeries.detachPrimitive(cyqSeries);
+            cyqSeries = null;
+        }
+    }
+};
+
+watch(() => props.chipData, () => {
+    updateCYQ();
+}, { deep: true });
+
+// Modify initCharts to call updateCYQ
+// ... inside initCharts, after candlestickSeries creation:
+// candlestickSeries = mainChart.addSeries(CandlestickSeries, ...);
+// markersPlugin = ...
+// updateCYQ(); // Add this line
+
+// ... existing onUnmounted
+onUnmounted(() => {
+    if (mainChart) { mainChart.remove(); mainChart = null; }
+    if (subChart) { subChart.remove(); subChart = null; }
+    if (mainResizeObserver) mainResizeObserver.disconnect();
+    if (subResizeObserver) subResizeObserver.disconnect();
+    cyqSeries = null;
+});
+
 
 // Containers
 const mainChartContainer = ref<HTMLElement | null>(null);
@@ -114,7 +161,6 @@ let mainChart: IChartApi | null = null;
 let subChart: IChartApi | null = null;
 
 // Series
-let candlestickSeries: ISeriesApi<"Candlestick"> | null = null;
 let markersPlugin: ISeriesMarkersPluginApi<any> | null = null;
 const mainSeriesMap = new Map<string, ISeriesApi<"Line" | "Histogram">>();
 const subSeriesMap = new Map<string, ISeriesApi<"Line" | "Histogram">>();

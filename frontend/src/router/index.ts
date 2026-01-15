@@ -64,12 +64,7 @@ const routes: RouteRecordRaw[] = [
             component: () => import('@/views/StrategyAggregation.vue'),
             meta: { requiresAuth: true, title: '策略聚合' },
           },
-          {
-            path: 'batch',
-            name: 'BatchAnalysis',
-            component: () => import('@/views/BatchAnalysis.vue'),
-            meta: { requiresAuth: true, title: '批量扫描' },
-          },
+
           {
             path: 'custom',
             name: 'CustomStrategy',

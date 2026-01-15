@@ -13,8 +13,9 @@
         <el-table-column prop="name" label="策略名称" width="200" />
         <el-table-column prop="description" label="描述" />
         <el-table-column prop="created_at" label="创建时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
+            <el-button link type="success" size="small" @click="handleBacktest(row)">回测</el-button>
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleView(row)">查看</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -31,7 +32,7 @@
       :close-on-click-modal="false"
       @close="handleDialogClose"
     >
-      <el-form :model="formData" label-width="120px" ref="formRef">
+      <el-form :model="formData" label-width="120px">
         <el-form-item label="策略名称" required>
           <el-input v-model="formData.name" placeholder="请输入策略名称" maxlength="100" />
         </el-form-item>
@@ -209,6 +210,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDark } from '@vueuse/core'
 import { customStrategyAPI, type CustomStrategyInfo, type CustomStrategyDetail, type CustomStrategyCreate, type CustomStrategyUpdate } from '@/api/customStrategy'
@@ -217,6 +219,7 @@ import apiClient from '@/api/client'
 import CodeEditor from '@/components/CodeEditor.vue'
 
 const isDark = useDark()
+const router = useRouter()
 
 // 策略列表
 const strategyList = ref<CustomStrategyInfo[]>([])
@@ -247,7 +250,7 @@ const filteredStrategyList = computed(() => {
 })
 
 // 表单数据
-const formRef = ref()
+// 表单数据
 const formData = ref<CustomStrategyCreate>({
   name: '',
   description: '',
@@ -307,7 +310,17 @@ class MyCustomStrategy(BaseStrategy):
         执行策略分析
         
         Args:
-            data: 股票数据 DataFrame，包含 date, open, close, high, low, volume 等列
+            data: 股票数据 DataFrame，包含以下列：
+                - date: 日期
+                - open: 开盘价
+                - close: 收盘价
+                - high: 最高价
+                - low: 最低价
+                - volume: 成交量
+                - amount: 成交额
+                - pct_chg: 涨跌幅
+                - change: 涨跌额
+                - turnover: 换手率
             **kwargs: 其他参数
         
         Returns:
@@ -433,6 +446,16 @@ const handleDelete = async (strategy: CustomStrategyInfo) => {
       ElMessage.error('删除失败: ' + (error.response?.data?.detail || error.message))
     }
   }
+}
+
+// 跳转回测
+const handleBacktest = (strategy: CustomStrategyInfo) => {
+  router.push({
+    name: 'StrategyAnalysis',
+    query: {
+      strategy_name: strategy.name
+    }
+  })
 }
 
 // 插入模板

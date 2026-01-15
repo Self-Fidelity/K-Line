@@ -140,6 +140,30 @@ async def get_minute_kline_data(
         )
 
 
+@router.get("/stocks/{stock_code}/chip-distribution")
+async def get_chip_distribution(
+    stock_code: str,
+    days: int = 120,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
+):
+    """
+    获取筹码分布数据 (CYQ)
+    """
+    try:
+        result = data_service.calculate_chip_distribution(stock_code, days=days)
+        if not result:
+             raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="无法计算筹码分布（可能缺少数据）",
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"计算筹码分布失败: {str(e)}",
+        )
 @router.post("/fetch", response_model=FetchDataResponse)
 async def fetch_data(
     request: FetchDataRequest,

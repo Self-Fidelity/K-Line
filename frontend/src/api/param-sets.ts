@@ -20,6 +20,7 @@ export interface ParamSet {
     date_range: string | null
     created_at: string
     is_default: number
+    metrics?: Record<string, number>
 }
 
 export interface ParamSetCreate {

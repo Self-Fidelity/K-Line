@@ -181,6 +181,16 @@
                 <div class="stat-value">{{ optimizingBestScore ? optimizingBestScore.toFixed(4) : '--' }}</div>
               </div>
             </div>
+
+            <!-- 实时优化日志 -->
+            <div class="optimization-logs" v-if="optimizingLogs.length > 0" style="margin-top: 20px;">
+              <h4>优化日志</h4>
+              <div class="logs-container" ref="realtimeLogsContainer" style="max-height: 200px; overflow-y: auto; background: var(--el-fill-color-light); padding: 10px; border-radius: 4px;">
+                <div v-for="(log, index) in optimizingLogs" :key="index" class="log-line" style="font-family: monospace; font-size: 12px; line-height: 1.5;">
+                  {{ log }}
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 未开始 -->
@@ -191,7 +201,7 @@
           />
 
           <!-- 优化结果 -->
-          <div v-else class="result-content">
+          <div v-else class="result-content" style="margin-top: 20px;">
             <div class="best-score">
               <div class="score-label">{{ getMetricLabel(form.target_metric) }}</div>
               <div class="score-value">{{ result.best_score.toFixed(4) }}</div>
@@ -205,18 +215,11 @@
             <!-- 收敛曲线 -->
             <div class="convergence-chart-section" v-if="result.convergence_curve && result.convergence_curve.length > 0">
               <h4>收敛过程</h4>
-              <div class="chart-wrapper" ref="chartContainer" style="height: 300px; width: 100%;"></div>
+              <!-- Explicit relative positioning for chart container -->
+              <div class="chart-wrapper" ref="chartContainer" style="height: 300px; width: 100%; position: relative;"></div>
             </div>
+            
 
-            <!-- 优化日志 -->
-            <div class="optimization-logs" v-if="result.optimization_logs && result.optimization_logs.length > 0">
-              <h4>优化日志</h4>
-              <div class="logs-container">
-                <div v-for="(log, index) in result.optimization_logs" :key="index" class="log-line">
-                  {{ log }}
-                </div>
-              </div>
-            </div>
 
             <div class="best-params">
               <h4>最佳参数组合</h4>
@@ -389,13 +392,13 @@
 import { 
   createChart, 
   ColorType, 
-  AreaSeries 
+  LineSeries
 } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi } from 'lightweight-charts'
+import type { IChartApi } from 'lightweight-charts'
 import { ref, reactive, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
-  Setting, VideoPlay, Check, DataAnalysis, Folder, Refresh, Calendar, Clock, TrendCharts, DataLine,
+  Setting, VideoPlay, Check, DataAnalysis, Refresh, Calendar, Clock,
   Collection, Star, StarFilled
 } from '@element-plus/icons-vue'
 import { strategyAPI, type StrategyInfo } from '@/api/strategy'
@@ -421,7 +424,10 @@ const result = ref<any>(null)
 const paramSets = ref<ParamSet[]>([])
 const saveDialogVisible = ref(false)
 const saving = ref(false)
-const convergenceChart = ref<HTMLCanvasElement | null>(null)
+const optimizingLogs = ref<string[]>([])
+const realtimeLogsContainer = ref<HTMLElement | null>(null)
+
+
 
 // 表单
 const form = reactive({
@@ -584,46 +590,89 @@ const handleOptimize = async () => {
 
   optimizing.value = true
   optimizingProgress.value = 0
-  optimizingStatusText.value = '初始化中...'
+  optimizingStatusText.value = '提交任务中...'
   optimizingElapsedTime.value = 0
   optimizingEstimatedRemaining.value = 0
   optimizingBestScore.value = null
   optimizingStartTime.value = Date.now()
+  optimizingLogs.value = []
   result.value = null
 
-  // 启动计时器
-  const totalIterations = form.max_iter
-  let currentIteration = 0
-  
+  // UI timer for elapsed time
+  if (optimizingTimer.value) clearInterval(optimizingTimer.value)
   optimizingTimer.value = window.setInterval(() => {
     const elapsed = (Date.now() - optimizingStartTime.value) / 1000
     optimizingElapsedTime.value = elapsed
-    
-    // 估算进度（基于已用时间）
-    const estimatedTimePerIter = totalIterations > 0 ? (elapsed / Math.max(currentIteration, 1)) : 2
-    currentIteration = Math.min(Math.floor(elapsed / estimatedTimePerIter), totalIterations)
-    optimizingProgress.value = Math.min((currentIteration / totalIterations) * 100, 95)
-    optimizingStatusText.value = `第 ${currentIteration} / ${totalIterations} 次迭代`
-    
-    // 估算剩余时间
-    const remainingIters = totalIterations - currentIteration
-    optimizingEstimatedRemaining.value = remainingIters * estimatedTimePerIter
-  }, 500)
+  }, 1000)
 
   try {
-    const res = await strategyAPI.optimizeStrategy(
-      form.stock_code,
-      form.strategy_name,
-      paramRanges,
-      dateRange.value[0],
-      dateRange.value[1],
-      form.target_metric,
-      'pso',
-      form.num_particles,
-      form.max_iter
-    )
+    // 1. Submit task
+    const res = await strategyAPI.optimizeStrategy({
+      stock_code: form.stock_code,
+      strategy_name: form.strategy_name,
+      param_ranges: paramRanges,
+      start_date: dateRange.value[0],
+      end_date: dateRange.value[1],
+      target_metric: form.target_metric,
+      method: 'pso',
+      num_particles: form.num_particles,
+      max_iter: form.max_iter
+    })
+
+    const taskId = res.task_id
+    optimizingStatusText.value = '任务已提交，正在排队...'
+
+    // 2. Poll for progress
+    const pollInterval = window.setInterval(async () => {
+      try {
+        const progress = await strategyAPI.getOptimizationProgress(taskId)
+        
+        if (progress.status === 'running') {
+          const current = progress.current_iteration
+          const total = progress.total_iterations
+          
+          optimizingProgress.value = Math.min((current / total) * 100, 99)
+          optimizingStatusText.value = `正在优化: 第 ${current} / ${total} 次迭代`
+          optimizingBestScore.value = progress.best_score
+          
+          if (progress.estimated_time_remaining) {
+            optimizingEstimatedRemaining.value = progress.estimated_time_remaining
+          }
+          
+          if (progress.logs) {
+            optimizingLogs.value = progress.logs
+            nextTick(() => {
+                if (realtimeLogsContainer.value) {
+                    realtimeLogsContainer.value.scrollTop = realtimeLogsContainer.value.scrollHeight
+                }
+            })
+          }
+        } else if (progress.status === 'completed') {
+           clearInterval(pollInterval)
+           finishOptimization(progress.result)
+        } else if (progress.status === 'failed') {
+           clearInterval(pollInterval)
+           throw new Error(progress.error || '优化失败')
+        }
+      } catch (err) {
+        console.warn('Polling error (will retry):', err)
+      }
+    }, 1000)
     
-    // 清除定时器
+    // Safety cleanup
+    const checkCancel = window.setInterval(() => {
+        if (!optimizing.value) {
+            clearInterval(pollInterval)
+            clearInterval(checkCancel)
+        }
+    }, 1000)
+
+  } catch (e: any) {
+    handleError(e)
+  }
+}
+
+const finishOptimization = (res: any) => {
     if (optimizingTimer.value) {
       clearInterval(optimizingTimer.value)
       optimizingTimer.value = null
@@ -633,28 +682,26 @@ const handleOptimize = async () => {
     optimizingStatusText.value = '优化完成'
     
     setTimeout(() => {
-      console.log('优化结果:', res)
-      console.log('是否有日志:', res.optimization_logs)
-      console.log('是否有收敛曲线:', res.convergence_curve)
       result.value = res
       ElMessage.success('优化完成')
-    }, 300)
-  } catch (e: any) {
+      optimizing.value = false
+      
+      // Render chart if available
+      if (res.convergence_curve) {
+         nextTick(() => {
+             renderConvergenceChart(res.convergence_curve)
+         })
+      }
+    }, 500)
+}
+
+const handleError = (e: any) => {
     if (optimizingTimer.value) {
       clearInterval(optimizingTimer.value)
       optimizingTimer.value = null
     }
-    ElMessage.error(e.response?.data?.detail || '优化失败')
-  } finally {
-    setTimeout(() => {
-      optimizing.value = false
-      optimizingProgress.value = 0
-      optimizingStatusText.value = '准备中...'
-      optimizingElapsedTime.value = 0
-      optimizingEstimatedRemaining.value = 0
-      optimizingBestScore.value = null
-    }, 500)
-  }
+    optimizing.value = false
+    ElMessage.error(e.message || e.response?.data?.detail || '优化失败')
 }
 
 const showSaveDialog = () => {
@@ -685,7 +732,7 @@ const handleSaveParamSet = async () => {
       name: saveForm.name,
       description: saveForm.description,
       params: result.value.best_params,
-      param_ranges: paramRanges,
+      param_ranges: paramRanges as Record<string, [number, number]>,
       target_metric: form.target_metric,
       best_score: result.value.best_score,
       optimization_method: 'pso',
@@ -779,10 +826,7 @@ const getMetricLabel = (val: string) => {
   return map[val] || val
 }
 
-const formatDate = (dateStr: string) => {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN')
-}
+
 
 const formatDateTime = (dateStr: string) => {
   const date = new Date(dateStr)
@@ -797,11 +841,7 @@ const formatDateTime = (dateStr: string) => {
   })
 }
 
-//计算参数在区间中的位置百分比
-const getMarkerPosition = (min: number, max: number, value: number) => {
-  if (max === min) return 50
-  return ((value - min) / (max - min)) * 100
-}
+
 
 // 格式化时间（秒）为 mm:ss 或 hh:mm:ss
 const formatElapsedTime = (seconds: number) => {
@@ -819,75 +859,59 @@ const formatElapsedTime = (seconds: number) => {
 
 // Chart variables
 let chart: IChartApi | null = null
-let areaSeries: ISeriesApi<"Area"> | null = null
 const chartContainer = ref<HTMLElement | null>(null)
 
-// 绘制收敛曲线
-const drawConvergenceCurve = () => {
-  if (!chartContainer.value || !result.value?.convergence_curve) return
-  
-  const data = result.value.convergence_curve
-  console.log('绘制收敛曲线 (Lightweight Charts), 数据:', data)
+const renderConvergenceChart = (data: number[]) => {
+    if (!chartContainer.value) return
+    
+    // Dispose old
+    if (chart) {
+        chart.remove()
+        chart = null
+    }
 
-  // 1. Dispose old chart if exists
-  if (chart) {
-    chart.remove()
-    chart = null
-  }
-
-  // 2. Create Chart
-  chart = createChart(chartContainer.value, {
-    layout: {
-      background: { type: ColorType.Solid, color: isDark.value ? '#1e1e1e' : '#ffffff' },
-      textColor: isDark.value ? '#d1d4dc' : '#333',
-    },
-    grid: {
-      vertLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
-      horzLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
-    },
-    width: chartContainer.value.clientWidth,
-    height: 300,
-    timeScale: {
-      visible: true,
-      // 移除 timeVisible 和 secondsVisible，避免与自定义Formatter冲突
-      // 当数据仅仅是1,2,3秒时，禁显示秒会导致刻度消失
-      tickMarkFormatter: (time: number) => {
-        return String(time)
-      },
-    },
-    localization: {
-      timeFormatter: (time: number) => {
-        return `迭代 ${time}`
-      }
-    },
-     rightPriceScale: {
-      borderVisible: false,
-    },
-  })
-
-  // 3. Add Series
-  areaSeries = chart.addSeries(AreaSeries, {
-    lineColor: '#2962FF', 
-    topColor: '#2962FF',
-    bottomColor: 'rgba(41, 98, 255, 0.28)',
-  })
-
-  // 4. Set Data
-  // Lightweight charts expects data to be sorted by time. 
-  // For convergence, we use iteration index as "time".
-  // Note: time must be distinct.
-  const chartData = data.map((val, index) => ({
-    time: (index + 1) as any, // Use index+1 as generic time
-    value: val
-  }))
-  
-  areaSeries.setData(chartData)
-  
-  // 5. Fit content
-  chart.timeScale().fitContent()
-
-  // 6. Resize Observer
-  if (chartContainer.value) {
+    // Create new
+    chart = createChart(chartContainer.value, {
+        width: chartContainer.value.clientWidth,
+        height: 300,
+        layout: {
+            background: { type: ColorType.Solid, color: isDark.value ? '#1e1e1e' : '#ffffff' },
+            textColor: isDark.value ? '#d1d5db' : '#333',
+        },
+        grid: {
+            vertLines: { color: isDark.value ? '#2b2b2b' : '#f0f0f0' },
+            horzLines: { color: isDark.value ? '#2b2b2b' : '#f0f0f0' },
+        },
+        timeScale: {
+            visible: true,
+            timeVisible: true,
+            secondsVisible: false,
+             tickMarkFormatter: (time: number) => {
+               return String(time)
+            },
+        },
+        localization: {
+           timeFormatter: (time: number) => {
+             return `迭代 ${time}` 
+           } 
+        }
+    })
+    
+    const lineSeries = chart.addSeries(LineSeries, {
+        color: '#2962FF',
+        lineWidth: 2,
+        title: '最佳适应度',
+    })
+    
+    const chartData = data.map((val, idx) => ({
+        time: (idx + 1) as any,
+        value: val
+    }))
+    
+    lineSeries.setData(chartData)
+    chart.timeScale().fitContent()
+    
+    // Resize observer
     const resizeObserver = new ResizeObserver(entries => {
       if (entries.length === 0 || !entries[0].contentRect) return
       if (chart) {
@@ -899,50 +923,43 @@ const drawConvergenceCurve = () => {
     })
     resizeObserver.observe(chartContainer.value)
     
-    // Cleanup observer on chart dispose (attach to chart object or external var?)
-    // Simpler: keep a global ref
     if ((window as any).__convergenceChartResizeObserver) {
-      (window as any).__convergenceChartResizeObserver.disconnect()
+        (window as any).__convergenceChartResizeObserver.disconnect()
     }
     ;(window as any).__convergenceChartResizeObserver = resizeObserver
-  }
 }
 
-// 监听result变化，绘制图表
+// Watchers
 watch(() => result.value, async (newResult) => {
   if (newResult && newResult.convergence_curve && newResult.convergence_curve.length > 0) {
-    console.log('监听到结果变化，准备绘制收敛曲线')
-    await nextTick()
-    // 再次等待以确保v-if渲染完成
-    setTimeout(() => {
-      drawConvergenceCurve()
-    }, 50)
+     await nextTick()
+     setTimeout(() => {
+         renderConvergenceChart(newResult.convergence_curve)
+     }, 50)
   }
 }, { deep: true })
 
-// 监听主题变化更新图表
 watch(isDark, () => {
   if (chart) {
     chart.applyOptions({
       layout: {
         background: { type: ColorType.Solid, color: isDark.value ? '#1e1e1e' : '#ffffff' },
-        textColor: isDark.value ? '#d1d4dc' : '#333',
+        textColor: isDark.value ? '#d1d5db' : '#333',
       },
       grid: {
-        vertLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
-        horzLines: { color: isDark.value ? '#2B2B43' : '#f0f3fa' },
+        vertLines: { color: isDark.value ? '#2b2b2b' : '#f0f0f0' },
+        horzLines: { color: isDark.value ? '#2b2b2b' : '#f0f0f0' },
       },
     })
   }
 })
 
-// 组件卸载时清理
 onUnmounted(() => {
   if (chart) {
     chart.remove()
     chart = null
   }
-  if ((window as any).__convergenceChartResizeObserver) {
+   if ((window as any).__convergenceChartResizeObserver) {
     (window as any).__convergenceChartResizeObserver.disconnect()
     ;(window as any).__convergenceChartResizeObserver = null
   }

@@ -320,11 +320,49 @@
         <!-- 参数配置 -->
         <el-card class="info-card" v-if="currentStrategyInfo">
           <template #header>
-            <div class="card-title">
-              <span>参数配置</span>
-              <el-tooltip content="配置策略的运行参数，不同的参数会影响策略的买卖点判断" placement="top">
-                <el-icon><QuestionFilled /></el-icon>
-              </el-tooltip>
+            <div class="card-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <div>
+                <span>参数配置</span>
+                <el-tooltip content="配置策略的运行参数，不同的参数会影响策略的买卖点判断" placement="top">
+                  <el-icon><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              
+              <el-popover
+                placement="bottom"
+                :width="400"
+                trigger="click"
+                @show="loadSavedParams"
+              >
+                <template #reference>
+                  <el-button type="primary" link size="small">
+                    <el-icon><Download /></el-icon> 加载优化参数
+                  </el-button>
+                </template>
+                
+                <div v-loading="loadingParamSets">
+                   <div v-if="availableParamSets.length === 0" style="text-align: center; color: #909399; padding: 10px;">
+                      暂无该策略的优化记录
+                   </div>
+                   <div v-else class="param-sets-list" style="max-height: 300px; overflow-y: auto;">
+                      <div v-for="set in availableParamSets" :key="set.id" 
+                           style="padding: 8px; cursor: pointer; border-bottom: 1px solid var(--el-border-color-lighter);"
+                           @click="applyParamSet(set)"
+                           class="param-set-item"
+                      >
+                         <div style="display: flex; justify-content: space-between;">
+                            <span style="font-weight: bold;">{{ set.name }}</span>
+                            <span style="color: var(--el-color-success); font-size: 13px;">
+                               {{ getParamMetricLabel(set.target_metric) }}: {{ set.best_score?.toFixed(2) }}
+                            </span>
+                         </div>
+                         <div style="font-size: 12px; color: var(--el-text-color-secondary);">
+                            {{ set.date_range || '无日期范围' }}
+                         </div>
+                      </div>
+                   </div>
+                </div>
+              </el-popover>
             </div>
           </template>
           
@@ -364,7 +402,7 @@
             >
               <div class="trade-header">
                 <span class="trade-date">{{ trade.date }}</span>
-                <el-tag size="small" :type="trade.type === 'buy' ? 'danger' : (trade.profit_rate && trade.profit_rate > 0 ? 'danger' : 'success')">
+                <el-tag size="small" :type="trade.type === 'buy' ? 'success' : (trade.profit_rate && trade.profit_rate > 0 ? 'danger' : 'success')">
                   {{ trade.type === 'buy' ? '买入' : `卖出 ${trade.profit_rate?.toFixed(2)}%` }}
                 </el-tag>
               </div>
@@ -382,12 +420,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { 
-  DataAnalysis, Collection, Star, StarFilled, QuestionFilled, ArrowDown, Search 
+import {
+  DataAnalysis, Collection, Star, StarFilled, QuestionFilled, ArrowDown, Search, Download
 } from '@element-plus/icons-vue'
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyAnalyzeResponse } from '@/api/strategy'
+import { paramSetsAPI, type ParamSet } from '@/api/param-sets'
 import { customStrategyAPI } from '@/api/customStrategy'
 import { dataAPI } from '@/api/data'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
@@ -405,6 +445,10 @@ const strategyPopoverVisible = ref(false)
 const strategySearchQuery = ref('')
 const analyzing = ref(false)
 const analysisResult = ref<StrategyAnalyzeResponse | null>(null)
+// Param sets state
+const loadingParamSets = ref(false)
+const availableParamSets = ref<ParamSet[]>([])
+
 const activeChartTab = ref<'kline' | 'equity'>('kline')
 const dateRange = ref<[string, string]>(['', ''])
 
@@ -536,7 +580,7 @@ const signalMarkers = computed<Marker[]>(() => {
       markers.push({
         time: dateStr,
         position: 'belowBar',
-        color: '#F44336',
+        color: '#4CAF50',
         shape: 'arrowUp',
         text: 'B'
       })
@@ -544,7 +588,7 @@ const signalMarkers = computed<Marker[]>(() => {
       markers.push({
         time: dateStr,
         position: 'aboveBar',
-        color: '#4CAF50',
+        color: '#F44336',
         shape: 'arrowDown',
         text: 'S'
       })
@@ -657,6 +701,49 @@ const reversedTrades = computed(() => {
   return [...analysisResult.value.statistics.trades].reverse()
 })
 
+
+
+// --- Param Sets Methods ---
+const loadSavedParams = async () => {
+  if (!analysisForm.strategyName) return
+  if (!analysisForm.stockCode) {
+    ElMessage.warning('请先选择股票')
+    return
+  }
+  
+  loadingParamSets.value = true
+  try {
+    const res = await paramSetsAPI.getParamSets(analysisForm.stockCode, analysisForm.strategyName)
+    availableParamSets.value = res.param_sets
+    if (res.param_sets.length === 0) {
+      ElMessage.info('暂无该策略的优化参数记录')
+    }
+  } catch (e: any) {
+    ElMessage.error('加载参数记录失败')
+  } finally {
+    loadingParamSets.value = false
+  }
+}
+
+const applyParamSet = (set: ParamSet) => {
+  // Clear existing params first to ensure clean state
+  Object.keys(strategyParams).forEach(k => delete strategyParams[k])
+  // Apply new params
+  Object.assign(strategyParams, set.params)
+  ElMessage.success(`已应用参数: ${set.name}`)
+}
+
+const getParamMetricLabel = (val: string | null) => {
+  if (!val) return '得分'
+  const map: Record<string, string> = {
+    'sharpe_ratio': '夏普比率',
+    'cumulative_return': '累计收益',
+    'sortino_ratio': '索提诺',
+    'win_rate': '胜率',
+  }
+  return map[val] || val
+}
+
 // --- Methods ---
 
 const formatNumber = (num: number) => {
@@ -715,10 +802,10 @@ const defaultParams: Record<string, Record<string, number>> = {
 
 // 日期快捷选项
 const dateShortcuts = [
-  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
-  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
-  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
-  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
+  { text: '最近1个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
+  { text: '最近3个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
+  { text: '最近6个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
+  { text: '最近1年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
 ]
 
 const loadStrategies = async () => {
@@ -888,8 +975,10 @@ const handleReset = () => {
   currentStrategyInfo.value = null
 }
 
-onMounted(() => {
-  loadStrategies()
+const route = useRoute()
+
+onMounted(async () => {
+  await loadStrategies()
   loadFavorites()
   // Default date range: last 6 months
   const end = new Date()
@@ -898,6 +987,20 @@ onMounted(() => {
   dateRange.value = [start.toISOString().split('T')[0], end.toISOString().split('T')[0]]
   analysisForm.startDate = dateRange.value[0]
   analysisForm.endDate = dateRange.value[1]
+  
+  // Check query params
+  if (route.query.strategy_name) {
+    analysisForm.strategyName = route.query.strategy_name as string
+    await handleStrategyChange(analysisForm.strategyName)
+  }
+  if (route.query.stock_code) {
+    analysisForm.stockCode = route.query.stock_code as string
+  }
+  
+  // Auto-analyze if both present
+  if (analysisForm.strategyName && analysisForm.stockCode) {
+    handleAnalyze()
+  }
 })
 </script>
 

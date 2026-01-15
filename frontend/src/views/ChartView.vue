@@ -118,7 +118,7 @@
     </el-card>
 
     <div class="main-content">
-      <!-- Chart Area -->
+      <!-- Chart Area (Left) -->
       <div class="chart-wrapper" v-loading="loading">
         <div v-if="!currentStock" class="empty-state">
           <el-empty description="请选择或输入股票代码开始分析" />
@@ -133,15 +133,18 @@
         />
       </div>
 
-      <!-- Statistics Panel (Sidebar) -->
-      <div class="stats-panel" v-if="currentStock">
-        <div class="panel-header">
-          <h3>统计分析</h3>
-          <span class="period">{{ dateRange?.[0] }} ~ {{ dateRange?.[1] }}</span>
-        </div>
+      <!-- Right Sidebar (Right) -->
+      <div class="right-sidebar" v-if="currentStock">
+          <!-- Chip Distribution Canvas -->
+          <div class="chip-canvas-wrapper">
+            <canvas ref="chipCanvas" class="chip-canvas"></canvas>
+          </div>
+
+          <!-- Statistics Panel (Bottom) -->
+          <div class="stats-panel">
 
         <div class="stat-card">
-          <h4>区间表现</h4>
+          <h4>区间表现 <span class="period" style="font-weight: normal; font-size: 11px; margin-left: 8px;">{{ dateRange?.[0] }} ~ {{ dateRange?.[1] }}</span></h4>
           <div class="stat-grid">
             <div class="stat-item">
               <span class="label">区间涨跌幅</span>
@@ -174,6 +177,7 @@
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -182,6 +186,29 @@ import { useRoute } from 'vue-router';
 import { Refresh, Close, QuestionFilled, Star, StarFilled, Collection } from '@element-plus/icons-vue';
 import { useDark } from '@vueuse/core';
 import { ElMessage } from 'element-plus';
+
+// ... (imports)
+import { type ChipDistributionData } from '@/plugins/ChipDistributionSeries';
+
+// ... (other refs)
+
+
+// ... (config)
+// ... (config)
+// Removed duplicate subIndicators definition
+
+
+// ... (toggle function)
+
+
+
+
+
+
+
+const chipData = ref<ChipDistributionData | null>(null);
+const chipCanvas = ref<HTMLCanvasElement | null>(null);
+
 import KlineChart, { type ChartData, type LineData } from '@/components/KlineChart.vue';
 import { dataAPI, type StockInfo } from '@/api/data';
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist';
@@ -207,7 +234,8 @@ const subIndicators: Record<string, { name: string, desc: string }> = {
   WR: { name: '威廉指标', desc: '主要用于辅助研判股价处于超买还是超卖状态。W%R 利用摆动点来度量市场的超买超卖现象。' },
   CCI: { name: '顺势指标', desc: '专门测量股价、外汇或者贵金属交易是否已超出常态分布范围。属于超买超卖类指标中较特殊的一种。' },
   BIAS: { name: '乖离率', desc: '测算股价在波动过程中与移动平均线出现偏离的程度，从而得出股价在剧烈波动时因偏离移动平均趋势而造成可能的回档或反弹。' },
-  OBV: { name: '能量潮', desc: '通过统计成交量变动的趋势来推测股价趋势。将成交量值予以数量化，制成趋势线，配合股价趋势线，从价格的变动及成交量的增减关系，推测市场气氛。' }
+  OBV: { name: '能量潮', desc: '通过统计成交量变动的趋势来推测股价趋势。将成交量值予以数量化，制成趋势线，配合股价趋势线，从价格的变动及成交量的增减关系，推测市场气氛。' },
+  CYQ: { name: '筹码分布', desc: '筹码分布（CYQ）展示了市场中不同价格区间上的筹码堆积情况，帮助识别支撑位和压力位。' }
 };
 
 // State
@@ -248,10 +276,10 @@ const stats = computed(() => {
 
 // Date Shortcuts
 const shortcuts = [
-  { text: '最近1月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
-  { text: '最近3月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
-  { text: '最近半年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
-  { text: '最近一年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
+  { text: '最近1个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
+  { text: '最近3个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
+  { text: '最近6个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
+  { text: '最近1年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
 ];
 
 const getValueColor = (val: number) => {
@@ -452,6 +480,119 @@ watch(activeMainIndicator, () => {
     updateLines();
 });
 
+
+// --- Chip Distribution Logic ---
+const activeCYQ = ref(true);
+
+const loadCYQ = async () => {
+    if (!currentStock.value) return;
+    loading.value = true;
+    try {
+        console.log('[DEBUG] Loading CYQ for', currentStock.value.code);
+        chipData.value = await dataAPI.getChipDistribution(currentStock.value.code);
+    } catch (e) {
+        console.error('Failed to load CYQ', e);
+    } finally {
+        loading.value = false;
+    }
+};
+
+
+
+// Auto-load CYQ when stock changes
+watch(() => currentStock.value, (newStock) => {
+    if (newStock && activeCYQ.value) {
+        loadCYQ();
+    }
+});
+
+// Draw chip distribution on canvas
+const drawChipDistribution = () => {
+    if (!chipCanvas.value || !chipData.value) return;
+    
+    const canvas = chipCanvas.value;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Set canvas size to match container
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    
+    const { bins, chips, currentPrice } = chipData.value;
+    if (bins.length === 0) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    
+    // Find max chip for scaling
+    const maxChip = Math.max(...chips);
+    const canvasWidth = rect.width;
+    const canvasHeight = rect.height;
+    
+    // Calculate bar dimensions
+    const barMaxWidth = canvasWidth * 0.85; // Use 85% of canvas width
+    const priceRange = Math.max(...bins) - Math.min(...bins);
+    const pixelsPerPrice = canvasHeight / priceRange;
+    
+    // Draw each chip bar
+    for (let i = 0; i < bins.length; i++) {
+        const price = bins[i];
+        const volume = chips[i];
+        
+        // Calculate Y position (price to pixel)
+        const priceMin = Math.min(...bins);
+        const y = canvasHeight - ((price - priceMin) * pixelsPerPrice);
+        
+        // Calculate bar height (more refined - smaller steps)
+        const priceStep = bins[1] - bins[0];
+        const barHeight = Math.max(pixelsPerPrice * priceStep, 1);
+        
+        // Calculate bar width based on volume
+        const barWidth = (volume / maxChip) * barMaxWidth;
+        
+        // Color based on profit/loss
+        const isProfit = price < currentPrice;
+        ctx.fillStyle = isProfit 
+            ? 'rgba(239, 83, 80, 0.7)'  // Red for loss (chips below current price)
+            : 'rgba(76, 175, 80, 0.7)'; // Green for profit (chips above current price)
+        
+        // Draw horizontal bar from left
+        ctx.fillRect(0, y - barHeight/2, barWidth, barHeight);
+    }
+    
+    // Draw current price line
+    const priceMin = Math.min(...bins);
+    const currentY = canvasHeight - ((currentPrice - priceMin) * pixelsPerPrice);
+    ctx.strokeStyle = '#FFC107';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(0, currentY);
+    ctx.lineTo(canvasWidth, currentY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+};
+
+// Watch chipData and redraw
+watch(chipData, () => {
+    if (chipData.value) {
+        // Use nextTick to ensure canvas is rendered
+        setTimeout(() => drawChipDistribution(), 100);
+    }
+}, { deep: true });
+
+// Redraw on window resize
+const handleResize = () => {
+    if (chipData.value) {
+        drawChipDistribution();
+    }
+};
+
+window.addEventListener('resize', handleResize);
+
+
 onMounted(() => {
     const end = new Date();
     const start = new Date();
@@ -468,6 +609,7 @@ onMounted(() => {
         currentStock.value = { code: stock as string, name: name as string || 'Unknown' };
         searchQuery.value = stock as string;
         fetchData();
+        // CYQ will be loaded by watch
     }
 });
 </script>
@@ -541,67 +683,97 @@ onMounted(() => {
   }
 }
 
-.main-content {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  
-  .chart-wrapper {
+  .main-content {
     flex: 1;
-    position: relative;
-    padding: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row; /* Horizontal layout */
+    overflow: hidden;
     
-    .empty-state {
-      height: 100%;
+    .chart-wrapper {
+      flex: 1;
+      position: relative;
       display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-  }
-
-  .stats-panel {
-    width: 280px;
-    background-color: v.$bg-secondary;
-    border-left: 1px solid v.$border-color;
-    overflow-y: auto;
-    padding: 20px;
-
-    .panel-header {
-      margin-bottom: 20px;
-      h3 { margin: 0 0 5px 0; font-size: 16px; font-weight: 600; }
-      .period { font-size: 12px; color: v.$text-secondary; }
-    }
-
-    .stat-card {
-      margin-bottom: 24px;
-      h4 {
-        font-size: 13px;
-        color: v.$text-secondary;
-        margin-bottom: 12px;
-        border-bottom: 1px solid v.$border-color;
-        padding-bottom: 8px;
-        font-weight: 600;
-      }
-      .stat-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-      .stat-item {
+      flex-direction: column;
+      min-width: 0;
+      
+      .empty-state {
+        height: 100%;
         display: flex;
-        flex-direction: column;
-        .label { font-size: 12px; color: v.$text-secondary; margin-bottom: 4px; }
-        .value {
-          font-size: 15px;
-          font-weight: 600;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        align-items: center;
+        justify-content: center;
+        color: v.$text-secondary;
+      }
+    }
+    
+    .right-sidebar {
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid v.$border-color;
+      background-color: v.$bg-secondary;
+      
+      .chip-canvas-wrapper {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+        display: flex;
+        align-items: stretch;
+        
+        .chip-canvas {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+      }
+      
+      .stats-panel {
+        /* Static layout in sidebar */
+        position: static;
+        width: 100%;
+        max-height: 50%;
+        border-top: 1px solid v.$border-color;
+        border-left: none;
+        border-radius: 0;
+        box-shadow: none;
+        overflow-y: auto;
+        padding: 20px;
+        background-color: transparent;
+
+        .panel-header {
+          margin-bottom: 20px;
+          h3 { margin: 0 0 5px 0; font-size: 16px; font-weight: 600; }
+          .period { font-size: 12px; color: v.$text-secondary; }
+        }
+
+        .stat-card {
+          margin-bottom: 24px;
+          h4 {
+            font-size: 13px;
+            color: v.$text-secondary;
+            margin-bottom: 12px;
+            border-bottom: 1px solid v.$border-color;
+            padding-bottom: 8px;
+            font-weight: 600;
+          }
+          .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+          }
+          .stat-item {
+            display: flex;
+            flex-direction: column;
+            .label { font-size: 12px; color: v.$text-secondary; margin-bottom: 4px; }
+            .value {
+              font-size: 15px;
+              font-weight: 600;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            }
+          }
         }
       }
     }
   }
-}
 
 .stock-code {
   font-weight: bold;
