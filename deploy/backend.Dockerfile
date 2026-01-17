@@ -23,6 +23,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . .
 
+# Initialize SQLite database (create tables if missing)
+RUN python backend/scripts/init_db.py
+RUN python scripts/setup.py
+
 # Create directory for database
 RUN mkdir -p data/database logs static
 
