@@ -37,7 +37,7 @@ const routes: RouteRecordRaw[] = [
             path: 'update',
             name: 'DataUpdateManagement',
             component: () => import('@/views/DataUpdateManagement.vue'),
-            meta: { requiresAuth: true, requiresAdmin: true, title: '数据更新' },
+            meta: { requiresAuth: true, title: '数据更新' },
           },
         ]
       },
@@ -123,7 +123,7 @@ router.beforeEach(async (to, _from, next) => {
     const { useAuthStore } = await import('@/stores/auth')
     const authStore = useAuthStore()
     // 简单检查，实际生产环境应更严谨
-    if (authStore.user?.role === 'admin') {
+    if (authStore.user?.role === 'admin') { // 所有人都可以查看，但只有管理员可以设置
       next()
     } else {
       next('/')

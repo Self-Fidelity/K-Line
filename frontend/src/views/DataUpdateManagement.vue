@@ -23,6 +23,7 @@
             <el-switch
               v-model="config.auto_update_enabled"
               @change="handleConfigChange"
+              :disabled="!isAdmin"
             />
             <span class="form-tip">开启后将在指定时间自动更新所有股票的日K线数据</span>
           </el-form-item>
@@ -36,6 +37,7 @@
               format="HH:mm"
               value-format="HH:mm"
               @change="handleDailyTimeChange"
+              :disabled="!isAdmin"
             />
             <span class="form-tip">交易日结束后执行（建议：15:30）</span>
           </el-form-item>
@@ -45,6 +47,7 @@
             <el-switch
               v-model="config.stock_list_update_enabled"
               @change="handleConfigChange"
+              :disabled="!isAdmin"
             />
             <span class="form-tip">开启后将在指定时间自动从API更新股票列表</span>
           </el-form-item>
@@ -58,14 +61,16 @@
               format="HH:mm"
               value-format="HH:mm"
               @change="handleStockListTimeChange"
+              :disabled="!isAdmin"
             />
             <span class="form-tip">交易日开始前执行（建议：09:00）</span>
           </el-form-item>
 
           <el-form-item>
-            <el-button type="primary" @click="handleSaveConfig" :loading="saving">
+            <el-button type="primary" @click="handleSaveConfig" :loading="saving" v-if="isAdmin">
               保存配置
             </el-button>
+            <el-tag type="info" v-else>仅管理员可修改配置</el-tag>
           </el-form-item>
         </el-form>
       </el-card>
@@ -139,6 +144,7 @@
                   type="primary"
                   @click="handleManualUpdate('stock_list')"
                   :loading="updating"
+                  :disabled="!isAdmin"
                   style="margin-top: 10px"
                 >
                   立即更新
@@ -152,11 +158,12 @@
                   <el-icon><DataLine /></el-icon>
                   <span>更新日K线数据</span>
                 </div>
-                <div class="action-desc">更新股票的日K线数据</div>
+                <div class="action-desc">更新指定市场或全部股票的日K线数据</div>
                 <el-select
                   v-model="selectedMarket"
                   placeholder="选择市场"
                   style="width: 100%; margin-top: 10px"
+                  :disabled="!isAdmin"
                 >
                   <el-option label="全部" value="all" />
                   <el-option label="主板" value="main" />
@@ -167,6 +174,7 @@
                   type="primary"
                   @click="handleManualUpdate('daily_data')"
                   :loading="updating"
+                  :disabled="!isAdmin"
                   style="margin-top: 10px; width: 100%"
                 >
                   立即更新
@@ -185,6 +193,7 @@
                   type="danger"
                   @click="handleManualUpdate('all')"
                   :loading="updating"
+                  :disabled="!isAdmin"
                   style="margin-top: 10px; width: 100%"
                 >
                   立即更新全部

@@ -17,9 +17,9 @@ update_service = DataUpdateService()
 
 @router.get("/config", response_model=DataUpdateConfig)
 async def get_update_config(
-    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
 ):
-    """获取数据更新配置"""
+    """获取数据更新配置（所有用户可见）"""
     try:
         config = update_service.get_config()
         return DataUpdateConfig(**config)
@@ -35,7 +35,7 @@ async def update_update_config(
     config_update: DataUpdateConfigUpdate,
     current_admin: Annotated[dict, Depends(get_current_admin_user)],
 ):
-    """更新数据更新配置"""
+    """更新数据更新配置（仅管理员）"""
     try:
         update_dict = config_update.model_dump(exclude_unset=True)
         update_service.update_config(update_dict)
@@ -50,9 +50,9 @@ async def update_update_config(
 
 @router.get("/scheduler/status")
 async def get_scheduler_status(
-    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
 ):
-    """获取调度器状态"""
+    """获取调度器状态（所有用户可见）"""
     try:
         return update_service.get_scheduler_status()
     except Exception as e:
@@ -66,7 +66,7 @@ async def get_scheduler_status(
 async def manual_update(
     request: ManualUpdateRequest,
     background_tasks: BackgroundTasks,
-    current_user_id: Annotated[int, Depends(get_current_user_id)],  # Modified to allow all users
+    current_admin: Annotated[dict, Depends(get_current_admin_user)],
 ):
     """手动触发数据更新"""
     try:
