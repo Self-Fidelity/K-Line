@@ -152,7 +152,7 @@
                   <el-icon><DataLine /></el-icon>
                   <span>更新日K线数据</span>
                 </div>
-                <div class="action-desc">更新指定市场或全部股票的日K线数据</div>
+                <div class="action-desc">更新股票的日K线数据</div>
                 <el-select
                   v-model="selectedMarket"
                   placeholder="选择市场"
@@ -322,12 +322,14 @@ const handleStockListTimeChange = () => {
   handleSaveConfig()
 }
 
-// 手动更新
+// const handleManualUpdate = async (updateType: 'stock_list' | 'daily_data' | 'all') => {
+//   if (!isAdmin.value) {
+//     ElMessage.warning('仅管理员可以执行此操作')
+//     return
+//   }
+
 const handleManualUpdate = async (updateType: 'stock_list' | 'daily_data' | 'all') => {
-  if (!isAdmin.value) {
-    ElMessage.warning('仅管理员可以执行此操作')
-    return
-  }
+  // 权限已放宽，所有用户均可触发手动更新
 
   updating.value = true
   try {

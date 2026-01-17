@@ -2,7 +2,7 @@
 
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from backend.app.api.auth import get_current_admin_user
+from backend.app.api.auth import get_current_admin_user, get_current_user_id
 from backend.app.models.data_update import (
     DataUpdateConfig,
     DataUpdateConfigUpdate,
@@ -66,7 +66,7 @@ async def get_scheduler_status(
 async def manual_update(
     request: ManualUpdateRequest,
     background_tasks: BackgroundTasks,
-    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],  # Modified to allow all users
 ):
     """手动触发数据更新"""
     try:
