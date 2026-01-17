@@ -236,6 +236,7 @@ class DataService:
             # 这里保持 原始值，前端如果画直方图，可能需要 max 值来定宽
             
             return {
+                "date": str(df.iloc[-1]['date']),
                 "bins": np.round(bins, 2).tolist(),
                 "chips": chips.tolist(),
                 "current_price": df.iloc[-1]['close']

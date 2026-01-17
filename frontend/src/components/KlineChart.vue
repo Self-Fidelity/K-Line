@@ -109,6 +109,9 @@ const props = withDefaults(defineProps<{
   chipData: null
 });
 
+const emit = defineEmits(['visible-range-change']);
+
+
 // ... existing refs
 let candlestickSeries: ISeriesApi<"Candlestick"> | null = null;
 let cyqSeries: ChipDistributionSeries | null = null;
@@ -201,6 +204,29 @@ const syncCharts = (source: IChartApi, target: IChartApi) => {
     });
 };
 
+const handleVisibleRangeChange = () => {
+    if (!mainChart || !mainChartContainer.value) return;
+    
+    // Get visible price range from the main chart's right scale
+    // IPriceScaleApi doesn't have getVisiblePriceRange directly in all versions, 
+    // so we use coordinateToPrice conversion which is robust.
+    const height = mainChartContainer.value.clientHeight;
+    const series = candlestickSeries; // Use the main series for conversion
+    
+    if (series) {
+        const topPrice = series.coordinateToPrice(0);
+        const bottomPrice = series.coordinateToPrice(height);
+        
+        if (topPrice !== null && bottomPrice !== null) {
+             emit('visible-range-change', {
+                min: Math.min(topPrice, bottomPrice),
+                max: Math.max(topPrice, bottomPrice),
+                height: height
+            });
+        }
+    }
+};
+
 const initCharts = async () => {
     if (!mainChartContainer.value) return;
     
@@ -213,12 +239,7 @@ const initCharts = async () => {
   await nextTick();
 
     // Debug log
-    console.log('Initializing KlineChart', {
-        width: mainChartContainer.value.clientWidth,
-        height: mainChartContainer.value.clientHeight,
-        dataLength: props.data.length,
-        linesLength: props.lines.length
-    });
+    // Debug log removed
 
     // Custom price formatter for consistent digit width across all charts
     const formatPrice = (price: number): string => {
@@ -278,12 +299,18 @@ const initCharts = async () => {
         height: mainChartContainer.value.clientHeight,
     });
 
+    // Subscribe to visible range changes (Logical range changes often trigger price scale updates)
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+        handleVisibleRangeChange();
+    });
+
     // Subscribe to crosshair move on main chart to update legend
     mainChart.subscribeCrosshairMove((param) => handleCrosshairMove(param, 'main'));
 
     mainResizeObserver = new ResizeObserver(entries => {
         if (!mainChart || entries.length === 0) return;
         mainChart.applyOptions({ width: entries[0].contentRect.width, height: entries[0].contentRect.height });
+        handleVisibleRangeChange();
     });
     mainResizeObserver.observe(mainChartContainer.value);
 
@@ -296,7 +323,7 @@ const initCharts = async () => {
     markersPlugin = createSeriesMarkers(candlestickSeries, []);
     
     // Debug series creation
-    console.log('Series created:', candlestickSeries);
+    // Series created
 
     // --- Sub Chart ---
     if (props.showSubChart && subChartContainer.value) {

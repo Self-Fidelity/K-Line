@@ -12,13 +12,18 @@
       <el-table :data="strategyList" style="width: 100%" v-loading="loading">
         <el-table-column prop="name" label="策略名称" width="200" />
         <el-table-column prop="description" label="描述" />
+        <el-table-column prop="username" label="创建人" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.is_system ? 'info' : ''" size="small">{{ row.is_system ? '系统' : row.username }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="180" />
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button link type="success" size="small" @click="handleBacktest(row)">回测</el-button>
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleView(row)">查看</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="canEdit(row)" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-if="canDelete(row)" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -217,9 +222,21 @@ import { customStrategyAPI, type CustomStrategyInfo, type CustomStrategyDetail, 
 import { strategyAPI, type StrategyInfo } from '@/api/strategy'
 import apiClient from '@/api/client'
 import CodeEditor from '@/components/CodeEditor.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const isDark = useDark()
 const router = useRouter()
+const authStore = useAuthStore()
+
+const canEdit = (row: CustomStrategyInfo) => {
+  if (row.is_system) return false
+  return authStore.user?.role === 'admin' || row.user_id === authStore.user?.id
+}
+
+const canDelete = (row: CustomStrategyInfo) => {
+  if (row.is_system) return false
+  return authStore.user?.role === 'admin' || row.user_id === authStore.user?.id
+}
 
 // 策略列表
 const strategyList = ref<CustomStrategyInfo[]>([])
@@ -358,11 +375,12 @@ const loadStrategyList = async () => {
       ...systemStrategyList.value.map(s => ({
         id: 0, // 系统策略没有ID，使用0
         user_id: 0,
+        username: 'System',
         name: s.name,
         description: s.description,
         detailed_description: s.detailed_description || '',
         parameter_descriptions: s.parameter_descriptions || {},
-        is_public: false,
+        is_public: true,
         is_system: true,
         created_at: '',
         updated_at: null,

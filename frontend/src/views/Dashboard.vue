@@ -7,6 +7,13 @@
       </div>
       <div class="header-right">
         <el-tag type="success" effect="dark" round>System Online</el-tag>
+        <div class="user-info" v-if="authStore.user">
+          <span class="username">👤 {{ authStore.user.username }}</span>
+          <el-button type="danger" link @click="handleLogout">
+            <el-icon><SwitchButton /></el-icon>
+            退出
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -55,6 +62,15 @@
               <li><strong>复盘验证 (Review)</strong>：使用 <el-link type="primary" @click="router.push('/chart')">K线复盘</el-link> 工具，手动查看K线形态与指标配合情况。</li>
             </ol>
 
+            <h3>📈 进阶工作流 (Advanced Workflow)</h3>
+            <p>构建稳健的量化交易系统，建议遵循以下闭环流程：</p>
+            <ol>
+              <li><strong>参数优化 (Optimization)</strong>：使用 <el-link type="primary" @click="router.push('/strategy/optimize')">策略优化</el-link> 工具，对特定策略进行多目标参数寻优，找到夏普比率或收益率最优的参数组合。</li>
+              <li><strong>保存参数 (Save)</strong>：在优化结果或单策略分析中，将满意的参数组合保存。</li>
+              <li><strong>对比验证 (Compare)</strong>：在 <el-link type="primary" @click="router.push('/strategy/compare')">策略对比</el-link> 中横向比较不同策略或同一策略不同参数的表现。</li>
+              <li><strong>策略聚合 (Aggregation)</strong>：最终使用 <el-link type="primary" @click="router.push('/strategy/aggregation')">策略聚合</el-link>，加载已保存的优化参数，构建多策略组合，平滑资金曲线。</li>
+            </ol>
+
             <h3>🛠️ 常用功能 (Features)</h3>
             <ul>
               <li><strong>策略参数调优</strong>：在单策略分析页，鼠标悬停在参数名旁可查看详细定义的物理含义。</li>
@@ -63,23 +79,26 @@
             </ul>
 
             <h3>📊 策略开发 (Dev Guide)</h3>
-            <p>如需添加新策略，请在后端 <code>src/strategy/plugins/</code> 目录下新建 Python 文件，继承 <code>BaseStrategy</code> 类并实现 <code>analyze</code> 方法。系统会自动扫描并加载新策略。</p>
-            <pre><code># Example: src/strategy/plugins/my_strategy.py
-from src.strategy.base import BaseStrategy
-
-class MyNewStrategy(BaseStrategy):
-    def __init__(self):
-        super().__init__(
-            name="My Strategy", 
-            description="Simple moving average crossover",
-            parameter_descriptions={"period": "MA period"}
-        )
-        self.period = 10
-    
+            <p>您可以在 <el-link type="primary" @click="router.push('/strategy/custom')">自定义策略</el-link> 页面直接创建新策略，无需编写本地文件。流程如下：</p>
+            <ol>
+              <li><strong>创建策略</strong>：点击"创建新策略"，填写名称与描述。</li>
+              <li><strong>编写代码</strong>：在在线编辑器中编写逻辑。系统提供"插入模板"功能，可快速生成标准结构。</li>
+              <li><strong>验证与保存</strong>：点击"验证代码"检查语法，确认无误后保存。</li>
+              <li><strong>回测验证</strong>：保存后可直接点击"回测"按钮，跳转至分析页面验证效果。</li>
+            </ol>
+            <pre><code># 常用代码模板 (Template)
     def analyze(self, data, **kwargs):
         df = data.copy()
-        # Implement your logic here
-        df['signal'] = ... # 1: Buy, -1: Sell, 0: Hold
+        period = int(kwargs.get("period", self.period))
+        
+        # 使用 pandas 计算指标
+        df['ma'] = df['close'].rolling(window=period).mean()
+        
+        # 生成信号 (1:买入, -1:卖出)
+        df['signal'] = 0
+        df.loc[df['close'] > df['ma'], 'signal'] = 1 
+        df.loc[df['close'] < df['ma'], 'signal'] = -1
+        
         return df</code></pre>
           </div>
         </el-card>
@@ -95,10 +114,14 @@ class MyNewStrategy(BaseStrategy):
             </div>
           </template>
           <div class="action-grid">
-            <el-button type="primary" plain icon="Monitor" @click="router.push('/strategy/analysis')">策略回测</el-button>
-            <el-button type="success" plain icon="Histogram" @click="router.push('/chart')">K线复盘</el-button>
-            <el-button type="warning" plain icon="DataAnalysis" @click="router.push('/data/manage')">数据管理</el-button>
-            <el-button type="info" plain icon="Setting" @click="router.push('/strategy/custom')">自定义策略</el-button>
+            <el-button type="primary" plain :icon="Monitor" @click="router.push('/strategy/analysis')">策略回测</el-button>
+            <el-button type="success" plain :icon="Histogram" @click="router.push('/chart')">K线复盘</el-button>
+            <el-button type="warning" plain :icon="DataAnalysis" @click="router.push('/data/manage')">数据管理</el-button>
+            <el-button type="info" plain :icon="Aim" @click="router.push('/strategy/optimize')">策略优化</el-button>
+            <el-button type="primary" plain :icon="Connection" @click="router.push('/strategy/aggregation')">策略聚合</el-button>
+            <el-button type="danger" plain :icon="Files" @click="router.push('/strategy/compare')">策略对比</el-button>
+            <el-button type="info" plain :icon="Setting" @click="router.push('/strategy/custom')">自定义策略</el-button>
+            <el-button v-if="isAdmin" type="warning" plain :icon="User" @click="router.push('/settings/users')">用户管理</el-button>
           </div>
         </el-card>
 
@@ -109,29 +132,22 @@ class MyNewStrategy(BaseStrategy):
               <span>系统日志</span>
             </div>
           </template>
-          <div class="log-list">
-            <div class="log-item">
-              <span class="time">{{ currentTime }}</span>
-              <span class="content">SQLite DB Path: data/database/kline.db</span>
+            <div class="log-list">
+              <div v-for="log in logs" :key="log.id" class="log-item">
+                <span class="time">{{ formatDate(log.created_at) }}</span>
+                <span class="content">
+                  <span class="username">{{ log.username }}</span>
+                  <span class="action">{{ log.action }}</span>
+                  <span v-if="log.details" class="details">- {{ log.details }}</span>
+                </span>
+              </div>
+              <div v-if="logs.length === 0" class="empty-log">暂无日志</div>
             </div>
-            <div class="log-item">
-              <span class="time">{{ currentTime }}</span>
-              <span class="content">System Online: All services running normally</span>
-            </div>
-            <div class="log-item">
-              <span class="time">{{ currentTime }}</span>
-              <span class="content">加载策略插件... {{ stats.strategyCount }} 个已加载</span>
-            </div>
-            <div class="log-item">
-              <span class="time">{{ currentTime }}</span>
-              <span class="content">数据库连接正常</span>
-            </div>
-          </div>
-        </el-card>
+          </el-card>
+        </div>
       </div>
     </div>
-  </div>
-</template>
+  </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
@@ -139,14 +155,34 @@ import { useRouter } from 'vue-router'
 import { 
   DataLine, TrendCharts, Cpu, Document, 
   Lightning, Bell, Monitor, Histogram, 
-  DataAnalysis, Setting 
+  DataAnalysis, Setting, Aim, Connection, Files, User, SwitchButton
 } from '@element-plus/icons-vue'
 import { dataAPI } from '@/api/data'
 import { strategyAPI } from '@/api/strategy'
-import { useNow, useDateFormat } from '@vueuse/core'
+import { logsAPI, type AuditLogInfo } from '@/api/logs'
+import { useAuthStore } from '@/stores/auth'
+import { computed } from 'vue'
+import { useDateFormat } from '@vueuse/core'
+import { ElMessage, ElMessageBox } from 'element-plus'
+
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 const router = useRouter()
-const currentTime = useDateFormat(new Date(), 'HH:mm:ss') // Static time for logs
+// const currentTime = useDateFormat(new Date(), 'HH:mm:ss') // Removed static time
+
+const handleLogout = () => {
+  ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    // 退出前也可以记录日志（前端触发或者后端在 logout endpoint 记录）
+    await authStore.logout()
+    router.push('/login')
+    ElMessage.success('已退出登录')
+  })
+}
 const lastUpdateTime = useDateFormat(new Date(), 'YYYY-MM-DD HH:mm')
 
 const stats = ref({
@@ -154,9 +190,11 @@ const stats = ref({
   strategyCount: 0,
 })
 
+const logs = ref<AuditLogInfo[]>([])
+
 const loadStats = async () => {
   try {
-    const stockListRes = await dataAPI.getStockList('main', false)
+    const stockListRes = await dataAPI.getStockList('main')
     stats.value.stockCount = stockListRes.total
 
     const strategyListRes = await strategyAPI.listStrategies()
@@ -166,8 +204,57 @@ const loadStats = async () => {
   }
 }
 
+const getStartupTime = () => {
+    let stored = sessionStorage.getItem('system_startup_time')
+    if (!stored) {
+      stored = new Date().toISOString()
+      sessionStorage.setItem('system_startup_time', stored)
+    }
+    return stored
+}
+
+const loadLogs = async () => {
+  try {
+    const res = await logsAPI.getLogs(10)
+    
+    const startupTime = getStartupTime()
+    
+    // 添加系统启动日志（模拟）
+    const systemLogs: AuditLogInfo[] = [
+      {
+        id: -1,
+        user_id: 0,
+        username: 'System',
+        action: 'System Status',
+        details: 'System Online: All services running normally',
+        ip_address: '127.0.0.1',
+        created_at: startupTime
+      },
+      {
+        id: -2,
+        user_id: 0,
+        username: 'System',
+        action: 'Database',
+        details: 'Connection established successfully',
+        ip_address: '127.0.0.1',
+        created_at: startupTime
+      }
+    ]
+    
+    logs.value = [...systemLogs, ...res.logs]
+  } catch (error) {
+    console.error('加载日志失败:', error)
+  }
+}
+
+const formatDate = (isoString: string) => {
+  const date = new Date(isoString)
+  return useDateFormat(date, 'HH:mm:ss').value
+}
+
 onMounted(() => {
   loadStats()
+  loadLogs()
 })
 </script>
 
@@ -194,6 +281,24 @@ onMounted(() => {
     color: var(--el-text-color-primary);
   }
   
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    
+    .username {
+      font-size: 14px;
+      color: var(--el-text-color-regular);
+      font-weight: 500;
+    }
+  }
+
   .subtitle {
     margin: 5px 0 0 0;
     font-size: 13px;

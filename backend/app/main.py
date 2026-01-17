@@ -4,10 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
+import logging
+from backend.app.config import settings
 from pathlib import Path
 import sys
-
-from backend.app.config import settings
 
 # 配置日志
 # logging.basicConfig(
@@ -55,6 +56,7 @@ async def health_check():
 
 
 # 导入路由
+# 导入路由
 from backend.app.api import (
     auth,
     data,
@@ -66,10 +68,16 @@ from backend.app.api import (
     watchlist,
     strategy_aggregation,
     param_sets,
-    aggregation_schemes
+    aggregation_schemes,
+    users,
+    logs
 )
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 注册路由
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(users.router, prefix="/api/admin/users", tags=["用户管理"])
 app.include_router(data.router, prefix="/api/data", tags=["数据"])
 app.include_router(strategy.router, prefix="/api/strategy", tags=["策略"])
 app.include_router(chart.router, prefix="/api/chart", tags=["图表"])
@@ -80,6 +88,7 @@ app.include_router(watchlist.router, prefix="/api/watchlist", tags=["自选股"]
 app.include_router(strategy_aggregation.router, prefix="/api/strategy-aggregation", tags=["策略聚合"])
 app.include_router(param_sets.router, prefix="/api/strategy", tags=["参数集管理"])
 app.include_router(aggregation_schemes.router, prefix="/api/strategy/aggregation-schemes", tags=["聚合策略方案"])
+app.include_router(logs.router, prefix="/api/logs", tags=["系统日志"])
 
 # 启动数据更新服务
 from backend.app.services.data_update_service import DataUpdateService

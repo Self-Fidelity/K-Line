@@ -6,9 +6,10 @@ import apiClient from './client'
 export interface CustomStrategyInfo {
   id: number
   user_id: number
+  username?: string
   name: string
   description: string
-  detailed_description?: string
+  detailed_description: string
   parameter_descriptions?: Record<string, string>
   is_public: boolean
   is_system: boolean

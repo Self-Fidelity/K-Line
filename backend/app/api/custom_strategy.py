@@ -3,7 +3,7 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.app.api.auth import get_current_user_id
+from backend.app.api.auth import get_current_user_id, get_current_user
 from backend.app.models.custom_strategy import (
     CustomStrategyCreate,
     CustomStrategyUpdate,
@@ -13,20 +13,43 @@ from backend.app.models.custom_strategy import (
     CustomStrategyValidateRequest,
     CustomStrategyValidateResponse,
 )
+
 from backend.app.services.custom_strategy_service import CustomStrategyService
+from backend.app.services.audit_log_service import AuditLogService
+from backend.app.models.audit_log import AuditLogCreate
+from fastapi import Request
 
 router = APIRouter()
 service = CustomStrategyService()
+log_service = AuditLogService()
 
 
 @router.post("", response_model=CustomStrategyInfo, status_code=status.HTTP_201_CREATED)
 async def create_strategy(
+    request: Request,
     strategy_data: CustomStrategyCreate,
-    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """创建自定义策略"""
     try:
-        return service.create_strategy(current_user_id, strategy_data)
+        user_id = current_user['id']
+        username = current_user['username']
+        new_strategy = service.create_strategy(user_id, strategy_data)
+        
+        # 记录日志
+        try:
+            log_service.log_event(AuditLogCreate(
+                user_id=user_id,
+                username=username,
+                action="创建策略",
+                details=f"创建了策略: {new_strategy.name}",
+                ip_address=request.client.host if request.client else None
+            ))
+        except Exception as e:
+            from backend.app.services.strategy_service import logger
+            logger.error(f"Failed to log strategy creation: {e}")
+            
+        return new_strategy
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -99,13 +122,16 @@ async def update_strategy(
 
 
 @router.delete("/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
+
 async def delete_strategy(
     strategy_id: int,
-    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """删除自定义策略"""
     try:
-        service.delete_strategy(strategy_id, current_user_id)
+        user_id = current_user['id']
+        is_admin = current_user['role'] == 'admin'
+        service.delete_strategy(strategy_id, user_id, is_admin=is_admin)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

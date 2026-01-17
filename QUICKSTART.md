@@ -53,6 +53,10 @@ npm run dev
 
 前端将在 http://localhost:5173 运行
 
+### 默认账户
+- **管理员**: `admin` / `admin123` (拥有所有权限)
+- **普通用户**: `user` / `user123`
+
 ### 6. 运行脚本
 
 ```bash

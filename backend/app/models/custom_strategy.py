@@ -27,6 +27,7 @@ class CustomStrategyInfo(BaseModel):
     """自定义策略信息模型"""
     id: int
     user_id: int
+    username: Optional[str] = None  # 创建人用户名
     name: str
     description: str
     detailed_description: str

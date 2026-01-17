@@ -85,7 +85,8 @@ export const dataAPI = {
     return {
       bins: response.data.bins,
       chips: response.data.chips,
-      currentPrice: response.data.current_price
+      currentPrice: response.data.current_price,
+      date: response.data.date
     };
   },
 }
@@ -94,4 +95,5 @@ export interface ChipDistributionData {
   bins: number[];
   chips: number[];
   currentPrice: number;
+  date?: string;
 }

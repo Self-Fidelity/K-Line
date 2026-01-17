@@ -41,6 +41,19 @@ const routes: RouteRecordRaw[] = [
           },
         ]
       },
+      // Settings
+      {
+        path: 'settings',
+        meta: { title: '系统设置' },
+        children: [
+          {
+            path: 'users',
+            name: 'UserManagement',
+            component: () => import('@/views/UserManagement.vue'),
+            meta: { requiresAuth: true, requiresAdmin: true, title: '用户管理' },
+          }
+        ]
+      },
       // Strategy Lab
       {
         path: 'strategy',
@@ -96,7 +109,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const token = localStorage.getItem('token')
 
   // Set document title

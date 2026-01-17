@@ -246,16 +246,7 @@
       <template #header>
         <div class="card-header">
           <span>比较结果</span>
-          <div>
-            <el-button type="success" @click="handleExportReport" :disabled="!compareResult">
-              <el-icon><Download /></el-icon>
-              导出报告
-            </el-button>
-            <el-button type="primary" @click="handleViewChart" :disabled="!compareResult">
-              <el-icon><Picture /></el-icon>
-              查看详细K线图
-            </el-button>
-          </div>
+
         </div>
       </template>
 
@@ -442,7 +433,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Picture, Trophy, Download, Collection, Star, StarFilled, Setting } from '@element-plus/icons-vue'
+import { Search, Trophy, Download, Collection, Star, StarFilled, Setting } from '@element-plus/icons-vue'
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
@@ -760,23 +751,7 @@ const handleReset = () => {
   compareForm.start_date = start.toISOString().split('T')[0]
 }
 
-// 查看K线图
-const handleViewChart = () => {
-  if (!compareResult.value || compareResult.value.results.length === 0) return
-  // 跳转到图表查看页面，传递第一个策略的信息
-  const firstResult = compareResult.value.results[0]
-  if (firstResult && !('error' in firstResult)) {
-    router.push({
-      path: '/chart',
-      query: {
-        strategy: firstResult.strategy_name,
-        stock: compareResult.value.stock_code,
-        start: compareResult.value.start_date,
-        end: compareResult.value.end_date,
-      },
-    })
-  }
-}
+
 
 // 加载保存的参数
 const loadSavedParams = async (strategyName: string) => {
@@ -806,14 +781,7 @@ const applyParamSet = (strategyName: string, set: ParamSet) => {
   ElMessage.success(`已应用参数: ${set.name}`)
 }
 
-const formatNumber = (num: number) => {
-  return num?.toFixed(2)
-}
 
-const getColorClass = (val: number) => {
-  if (!val) return ''
-  return val >= 0 ? 'up' : 'down'
-}
 
 const getParamMetricLabel = (val: string | null) => {
   if (!val) return '得分'
@@ -1169,43 +1137,7 @@ const strategyLines = computed<LineData[]>(() => {
   return []
 })
 
-// 导出对比报告
-const handleExportReport = () => {
-  if (!compareResult.value) return
-  
-  // 构建CSV内容
-  const headers = ['策略名称', '总信号数', '买入信号', '卖出信号', '累计收益率', '胜率', '最大回撤', '总交易次数', '盈利交易', '最终资金']
-  const rows = comparisonTableData.value.map(row => [
-    row.strategy_name,
-    row.total_signals || 0,
-    row.buy_signals || 0,
-    row.sell_signals || 0,
-    `${(row.cumulative_return || 0).toFixed(2)}%`,
-    `${(row.win_rate || 0).toFixed(2)}%`,
-    `${(row.max_drawdown || 0).toFixed(2)}%`,
-    row.total_trades || 0,
-    row.profitable_trades || 0,
-    row.final_capital || 0,
-  ])
-  
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.join(','))
-  ].join('\n')
-  
-  // 创建下载链接
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-  link.setAttribute('href', url)
-  link.setAttribute('download', `策略对比报告_${compareResult.value.stock_code}_${new Date().toISOString().split('T')[0]}.csv`)
-  link.style.visibility = 'hidden'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  
-  ElMessage.success('报告导出成功')
-}
+
 
 onMounted(() => {
   loadStrategies()
@@ -1228,8 +1160,7 @@ onMounted(() => {
 .strategy-compare {
   display: flex;
   flex-direction: column;
-  gap: 15px;
-  padding: 15px;
+  padding: 0;
 }
 
 .control-panel {

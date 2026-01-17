@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlite3 import Connection
 
@@ -21,11 +21,51 @@ from backend.app.utils.security import (
     decode_access_token,
 )
 from backend.app.config import settings
+from backend.app.services.audit_log_service import AuditLogService
+from backend.app.models.audit_log import AuditLogCreate
 
 router = APIRouter()
+log_service = AuditLogService()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+# ... (omitted get_current_user_id and others) ...
+
+@router.post("/login", response_model=Token)
+async def login(
+    request: Request,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Annotated[Connection, Depends(get_db)],
+):
+    """用户登录"""
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 记录登录日志
+    try:
+        log_service.log_event(AuditLogCreate(
+            user_id=user["id"],
+            username=user["username"],
+            action="用户登录",
+            details="登录成功",
+            ip_address=request.client.host if request.client else None
+        ))
+    except Exception as e:
+        # 使用 logger 记录错误而不是 print
+        from backend.app.services.strategy_service import logger
+        logger.error(f"Failed to log login event: {e}")
+
+    access_token_expires = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user["id"]), "username": user["username"]},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return Token(access_token=access_token, token_type="bearer")
 
 def get_current_user_id(
     token: Annotated[str, Depends(oauth2_scheme)],
@@ -112,31 +152,27 @@ def authenticate_user(db: Connection, username: str, password: str) -> dict | No
     return user
 
 
-@router.post("/login", response_model=Token)
-async def login(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    db: Annotated[Connection, Depends(get_db)],
-):
-    """用户登录"""
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user["id"]), "username": user["username"]},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
-    return Token(access_token=access_token, token_type="bearer")
+
 
 
 @router.post("/logout")
 async def logout():
     """用户登出（客户端删除token即可）"""
     return {"message": "登出成功"}
+
+
+def get_current_user(
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    db: Annotated[Connection, Depends(get_db)],
+) -> dict:
+    """获取当前用户（包含角色信息）"""
+    user = get_user_by_id(db, current_user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在",
+        )
+    return user
 
 
 @router.get("/me", response_model=UserResponse)

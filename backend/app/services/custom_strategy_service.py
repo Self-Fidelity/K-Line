@@ -271,13 +271,14 @@ class CustomStrategyService:
         finally:
             conn.close()
     
-    def delete_strategy(self, strategy_id: int, user_id: int) -> bool:
+    def delete_strategy(self, strategy_id: int, user_id: int, is_admin: bool = False) -> bool:
         """
         删除自定义策略
         
         Args:
             strategy_id: 策略ID
-            user_id: 用户ID
+            user_id: 当前用户ID
+            is_admin: 是否为管理员
             
         Returns:
             是否删除成功
@@ -285,17 +286,21 @@ class CustomStrategyService:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            # 获取文件路径
-            cursor.execute("""
-                SELECT file_path FROM custom_strategies 
-                WHERE id = ? AND user_id = ?
-            """, (strategy_id, user_id))
+            
+            # 1. 检查策略存在性及权限
+            cursor.execute("SELECT user_id, file_path FROM custom_strategies WHERE id = ?", (strategy_id,))
             row = cursor.fetchone()
             
             if not row:
-                raise ValueError(f"策略不存在或无权限访问")
+                raise ValueError(f"策略不存在")
+                
+            strategy_owner_id = row['user_id']
             
-            # 删除文件
+            # 检查权限：只有创建者或管理员可以删除
+            if strategy_owner_id != user_id and not is_admin:
+                 raise ValueError("无权删除该策略")
+
+            # 2. 删除文件
             file_path = Path(row['file_path']) if row['file_path'] else None
             if file_path and file_path.exists():
                 try:
@@ -303,14 +308,11 @@ class CustomStrategyService:
                 except Exception as e:
                     logger.warning(f"删除策略文件失败: {e}")
             
-            # 删除数据库记录
-            cursor.execute("""
-                DELETE FROM custom_strategies 
-                WHERE id = ? AND user_id = ?
-            """, (strategy_id, user_id))
+            # 3. 删除数据库记录
+            cursor.execute("DELETE FROM custom_strategies WHERE id = ?", (strategy_id,))
             conn.commit()
             
-            logger.info(f"用户 {user_id} 删除自定义策略 ID: {strategy_id}")
+            logger.info(f"用户 {user_id} (Admin: {is_admin}) 删除自定义策略 ID: {strategy_id}")
             return True
             
         except Exception as e:
@@ -435,12 +437,12 @@ class CustomStrategyService:
         finally:
             conn.close()
     
-    def list_strategies(self, user_id: int) -> List[CustomStrategyInfo]:
+    def list_strategies(self, user_id: int = None) -> List[CustomStrategyInfo]:
         """
-        获取用户的所有自定义策略
+        获取所有自定义策略（包含创建者信息）
         
         Args:
-            user_id: 用户ID
+            user_id: 可选的用户ID过滤（如果不传则返回所有）
             
         Returns:
             策略列表
@@ -448,20 +450,27 @@ class CustomStrategyService:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, user_id, name, description, detailed_description, 
-                       parameter_descriptions, is_public, is_system, 
-                       created_at, updated_at
-                FROM custom_strategies 
-                WHERE user_id = ?
-                ORDER BY created_at DESC
-            """, (user_id,))
+            
+            sql = """
+                SELECT t1.id, t1.user_id, t1.name, t1.description, t1.detailed_description, 
+                       t1.parameter_descriptions, t1.is_public, t1.is_system, 
+                       t1.created_at, t1.updated_at, t2.username
+                FROM custom_strategies t1
+                LEFT JOIN users t2 ON t1.user_id = t2.id
+            """
+            
+            # 实际上现在需求是所有人可见，所以不需要 user_id 过滤，或者作为可选项
+            # 这里我们改为返回所有策略，user_id 参数暂时保留兼容性
+            sql += " ORDER BY t1.created_at DESC"
+            
+            cursor.execute(sql)
             
             strategies = []
             for row in cursor.fetchall():
                 strategies.append(CustomStrategyInfo(
                     id=row['id'],
                     user_id=row['user_id'],
+                    username=row['username'] or 'Unknown',
                     name=row['name'],
                     description=row['description'] or '',
                     detailed_description=row['detailed_description'] or '',

@@ -130,13 +130,14 @@
           autosize
           :watermark="currentStock?.name"
           :dark-mode="isDark"
+          @visible-range-change="updateChipRange"
         />
       </div>
 
       <!-- Right Sidebar (Right) -->
       <div class="right-sidebar" v-if="currentStock">
           <!-- Chip Distribution Canvas -->
-          <div class="chip-canvas-wrapper">
+          <div class="chip-canvas-wrapper" :style="chipWrapperStyle">
             <canvas ref="chipCanvas" class="chip-canvas"></canvas>
           </div>
 
@@ -488,7 +489,7 @@ const loadCYQ = async () => {
     if (!currentStock.value) return;
     loading.value = true;
     try {
-        console.log('[DEBUG] Loading CYQ for', currentStock.value.code);
+    try {
         chipData.value = await dataAPI.getChipDistribution(currentStock.value.code);
     } catch (e) {
         console.error('Failed to load CYQ', e);
@@ -506,6 +507,25 @@ watch(() => currentStock.value, (newStock) => {
     }
 });
 
+// Visible range sync
+const visibleRange = ref<{ min: number; max: number; height: number } | null>(null);
+
+const chipWrapperStyle = computed(() => {
+    if (visibleRange.value && visibleRange.value.height > 0) {
+        // Enforce exact height to match main chart
+        return { 
+            height: visibleRange.value.height + 'px',
+            flex: 'none' // Disable flex growing/shrinking
+        };
+    }
+    return {};
+});
+
+const updateChipRange = (range: { min: number; max: number; height: number }) => {
+    visibleRange.value = range;
+    drawChipDistribution();
+};
+
 // Draw chip distribution on canvas
 const drawChipDistribution = () => {
     if (!chipCanvas.value || !chipData.value) return;
@@ -514,8 +534,10 @@ const drawChipDistribution = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Set canvas size to match container
+    // Set canvas size to match container (container size might be forced by style now)
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    
     canvas.width = rect.width * window.devicePixelRatio;
     canvas.height = rect.height * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
@@ -526,26 +548,48 @@ const drawChipDistribution = () => {
     // Clear canvas
     ctx.clearRect(0, 0, rect.width, rect.height);
     
-    // Find max chip for scaling
-    const maxChip = Math.max(...chips);
+    // Determine price range for scaling
+    // Use visible range if available (for sync), otherwise fallback to full range
+    let minPrice: number, maxPrice: number;
+    
+    if (visibleRange.value) {
+        minPrice = visibleRange.value.min;
+        maxPrice = visibleRange.value.max;
+    } else {
+         minPrice = Math.min(...bins);
+         maxPrice = Math.max(...bins);
+    }
+    
+    const priceRange = maxPrice - minPrice;
+    if (priceRange <= 0) return;
+
+    // Canvas dimensions
     const canvasWidth = rect.width;
     const canvasHeight = rect.height;
     
+    // Pixels per price unit
+    const pixelsPerPrice = canvasHeight / priceRange;
+
+    // Find max chip for scaling bar width
+    const maxChip = Math.max(...chips);
+    
     // Calculate bar dimensions
     const barMaxWidth = canvasWidth * 0.85; // Use 85% of canvas width
-    const priceRange = Math.max(...bins) - Math.min(...bins);
-    const pixelsPerPrice = canvasHeight / priceRange;
     
     // Draw each chip bar
     for (let i = 0; i < bins.length; i++) {
         const price = bins[i];
         const volume = chips[i];
         
-        // Calculate Y position (price to pixel)
-        const priceMin = Math.min(...bins);
-        const y = canvasHeight - ((price - priceMin) * pixelsPerPrice);
+        // Skip if out of visible range (optimization)
+        if (price > maxPrice || price < minPrice) continue;
         
-        // Calculate bar height (more refined - smaller steps)
+        // Calculate Y position
+        // Coordinate system: Top is 0 (maxPrice), Bottom is height (minPrice)
+        // y = (maxPrice - price) * pixelsPerPrice
+        const y = (maxPrice - price) * pixelsPerPrice;
+        
+        // Calculate bar height
         const priceStep = bins[1] - bins[0];
         const barHeight = Math.max(pixelsPerPrice * priceStep, 1);
         
@@ -555,24 +599,122 @@ const drawChipDistribution = () => {
         // Color based on profit/loss
         const isProfit = price < currentPrice;
         ctx.fillStyle = isProfit 
-            ? 'rgba(239, 83, 80, 0.7)'  // Red for loss (chips below current price)
-            : 'rgba(76, 175, 80, 0.7)'; // Green for profit (chips above current price)
+            ? 'rgba(239, 83, 80, 0.7)'  // Red for loss
+            : 'rgba(76, 175, 80, 0.7)'; // Green for profit
         
-        // Draw horizontal bar from left
+        // Draw horizontal bar
+        // y represents the top of the price bin? Or center?
+        // Usually price corresponds to the value. Let's assume center or bottom.
+        // In KLine, price is y-axis value.
+        // We centre the bar at y.
         ctx.fillRect(0, y - barHeight/2, barWidth, barHeight);
     }
     
     // Draw current price line
-    const priceMin = Math.min(...bins);
-    const currentY = canvasHeight - ((currentPrice - priceMin) * pixelsPerPrice);
-    ctx.strokeStyle = '#FFC107';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(0, currentY);
-    ctx.lineTo(canvasWidth, currentY);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (currentPrice >= minPrice && currentPrice <= maxPrice) {
+        const currentY = (maxPrice - currentPrice) * pixelsPerPrice;
+        ctx.strokeStyle = '#FFC107';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, currentY);
+        ctx.lineTo(canvasWidth, currentY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // --- Draw Indicators Text ---
+    // Text Styling
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    const paddingX = 12;
+    const startY = 12;
+    const lineHeight = 20;
+    
+    // Config Colors
+    const colors = {
+        title: isDark.value ? '#E0E0E0' : '#333333',
+        label: isDark.value ? '#9E9E9E' : '#666666',
+        profit: '#ef5350', // Red for profit ratio (Winner)
+        cost: '#42a5f5',   // Blue for Average Cost
+        range: isDark.value ? '#bdbdbd' : '#424242',
+        concentration: '#ffca28' // Amber for Concentration
+    };
+
+    // Helper to draw label-value pair with colors
+    let currentY = startY;
+    function drawMetric(label: string, value: string, valueColor: string) {
+        if (!ctx) return;
+        ctx.font = '12px "Microsoft YaHei", sans-serif';
+        // Draw Value first (right aligned)
+        ctx.fillStyle = valueColor;
+        ctx.fillText(value, canvasWidth - paddingX, currentY);
+        
+        // Measure value width to place label
+        const valueWidth = ctx.measureText(value).width;
+        
+        // Draw Label
+        ctx.fillStyle = colors.label;
+        ctx.fillText(label, canvasWidth - paddingX - valueWidth - 5, currentY); // 5px spacing
+        
+        currentY += lineHeight;
+    }
+
+    // 1. Title with Date
+    let dateStr = chipData.value.date || '';
+    // Robust date parsing (YYYYMMDD or YYYY-MM-DD or datetime)
+    dateStr = dateStr.split(' ')[0]; // Remove time if present
+    dateStr = dateStr.replace(/-/g, ''); // Standardize to YYYYMMDD
+    
+    if (dateStr.length === 8) {
+        dateStr = `${dateStr.substring(0, 4)}年${dateStr.substring(4, 6)}月${dateStr.substring(6, 8)}日`;
+    }
+
+    const title = dateStr ? `${dateStr} 筹码分布` : '筹码分布';
+    ctx.font = 'bold 13px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = colors.title;
+    ctx.fillText(title, canvasWidth - paddingX, currentY);
+    currentY += lineHeight + 6; // Extra gap
+    
+    // 2. Metrics Calculation
+    const totalChips = chips.reduce((a, b) => a + b, 0);
+    
+    if (totalChips > 0) {
+        // Close Profit (Winner Ratio)
+        const profitChips = chips.reduce((acc, c, i) => bins[i] < currentPrice ? acc + c : acc, 0);
+        const profitRatio = (profitChips / totalChips) * 100;
+        drawMetric('获利比例: ', `${profitRatio.toFixed(2)}%`, colors.profit);
+        
+        // Average Cost
+        const totalCost = chips.reduce((acc, c, i) => acc + (c * bins[i]), 0);
+        const avgCost = totalCost / totalChips;
+        drawMetric('平均成本: ', `${avgCost.toFixed(2)}`, colors.cost);
+
+        // 90% Cost Range & Concentration
+        const target5 = totalChips * 0.05;
+        const target95 = totalChips * 0.95;
+        let cum = 0;
+        let cost5 = bins[0];
+        let cost95 = bins[bins.length - 1];
+        let found5 = false;
+        
+        for (let i = 0; i < chips.length; i++) {
+            cum += chips[i];
+            if (!found5 && cum >= target5) {
+                cost5 = bins[i];
+                found5 = true;
+            }
+            if (cum >= target95) {
+                cost95 = bins[i];
+                break;
+            }
+        }
+        
+        drawMetric('90%成本: ', `${cost5.toFixed(2)} - ${cost95.toFixed(2)}`, colors.range);
+        
+        const concentration = (cost95 - cost5) / (cost95 + cost5);
+        drawMetric('90%集中度: ', `${(concentration * 100).toFixed(2)}%`, colors.concentration);
+    }
 };
 
 // Watch chipData and redraw
