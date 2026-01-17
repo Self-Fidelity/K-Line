@@ -31,6 +31,14 @@
    - `VITE_API_BASE_URL`: 生产环境通常设为 `/api`（通过 Nginx 代理）。
    - 其他邮件SMTP配置（如果需要）。
 
+3. **前端高级配置 (可选)**
+   如果需要将项目部署在子路径下（例如 `http://domain.com/stock/`），请在 `frontend` 目录下新建或修改 `.env` 文件：
+   ```bash
+   # 设置应用的基础路径 (默认为 /)
+   VITE_BASE_PATH=/stock/
+   ```
+   **注意**：修改此配置后必须重新构建前端镜像 (`docker-compose build frontend`) 才能生效。
+
 ## 构建与启动
 
 1. **构建并启动服务**
