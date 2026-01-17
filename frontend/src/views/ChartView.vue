@@ -489,7 +489,7 @@ const loadCYQ = async () => {
     if (!currentStock.value) return;
     loading.value = true;
     try {
-    try {
+        console.log('[DEBUG] Loading CYQ for', currentStock.value.code);
         chipData.value = await dataAPI.getChipDistribution(currentStock.value.code);
     } catch (e) {
         console.error('Failed to load CYQ', e);

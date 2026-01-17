@@ -1,15 +1,28 @@
 # K-Line project dependencies
 # Install with: pip install -r requirements.txt
 
-# Core dependencies
+# Core Data & Analysis
 akshare>=1.12.0
 pandas>=2.1.0
 numpy>=1.24.0
 bokeh>=3.0.0
 python-dotenv>=1.0.0
 
-# Development dependencies (optional)
-# black>=23.0.0
-# flake8>=6.0.0
-# pytest>=7.4.0
-# mypy>=1.5.0
+# Web Framework & Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Authentication & Security
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+pydantic>=2.0.0
+email-validator>=2.0.0
+
+# Utilities & Services
+APScheduler>=3.10.0
+aiosmtplib>=2.0.0
+jinja2>=3.1.0
+
+# Development Tools
+watchfiles>=0.21.0

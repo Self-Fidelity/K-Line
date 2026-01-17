@@ -18,7 +18,6 @@ export interface ChipDistributionData {
     bins: number[];
     chips: number[];
     currentPrice: number;
-    date?: string;
 }
 
 class ChipDistributionPaneRenderer implements IPrimitivePaneRenderer {
@@ -46,10 +45,15 @@ class ChipDistributionPaneRenderer implements IPrimitivePaneRenderer {
         const series = source.attachedSeries;
 
         if (!data || !series || data.bins.length === 0) {
+            console.log('[CYQ_DEBUG] Missing data or series', { data: !!data, series: !!series });
             return;
         }
 
-
+        console.log('[CYQ_DEBUG] Drawing frame', {
+            bins: data.bins.length,
+            width: scope.mediaSize.width,
+            priceToCoord: series.priceToCoordinate(data.currentPrice)
+        });
 
         // const chartWidth = scope.mediaSize.width;
         const maxBarWidth = scope.mediaSize.width * 0.3;

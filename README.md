@@ -24,34 +24,30 @@ K-Line 是一个用于获取、存储和分析中国A股市场数据的Python项
 
 ## 项目结构
 
-## 项目结构
-
 ```
 K-Line/
-├── backend/                # 后端代码 (FastAPI)
-│   ├── app/                # 应用源码
-│   ├── scripts/            # 数据库维护脚本
-│   └── requirements.txt    # 后端依赖
-├── frontend/               # 前端代码 (Vue 3 + TS)
-│   ├── src/                # 前端源码
-│   └── package.json        # 前端依赖
-├── src/                    # 核心业务逻辑 (策略/数据处理)
-│   ├── strategy/           # 策略引擎 & 插件
-│   └── data_fetcher/       # 数据获取核心
-├── scripts/                # 命令行工具脚本 (数据获取/策略运行)
-├── data/                   # 数据存储
-│   ├── database/           # SQLite 数据库
-│   └── strategy_results/   # 策略结果
-└── logs/                   # 系统日志
+├── src/                    # 源代码目录
+│   ├── config/             # 配置管理
+│   ├── data_fetcher/       # 数据获取模块
+│   ├── data_storage/       # 数据存储模块
+│   ├── strategy/           # 策略分析模块（插件框架）
+│   ├── utils/              # 工具模块
+│   └── visualization/      # 数据可视化模块
+├── data/                   # 数据存储目录
+│   ├── csv/               # CSV 导出数据
+│   ├── database/          # SQLite 数据库文件
+│   ├── images/            # 图表输出目录（HTML文件）
+│   └── strategy_results/  # 策略分析结果目录（按策略分类）
+├── logs/                   # 日志目录
+├── scripts/                # 脚本目录
+│   ├── setup.py           # 数据库初始化脚本
+│   ├── fetch_data.py      # 手动数据获取脚本
+│   ├── export_data.py     # 数据导出示例脚本
+│   ├── plot_kline.py      # K线图生成示例脚本
+│   └── demo_strategy.py   # 策略框架使用示例脚本
+├── venv/                   # Python虚拟环境（不提交到Git）
+└── tests/                  # 测试目录
 ```
-
-## 🚀 新增功能 (v0.2.0)
-
-- **📊 筹码分布 (CYQ)**: 可视化筹码分布图，支持成本区间、获利比例分析。
-- **📝 审计日志**: 记录用户关键操作（登录、策略创建等），增强系统安全性。
-- **👥 用户管理**: 完善的 RBAC 权限系统，支持管理员管理用户角色。
-- **⚡ 策略优化**: 支持多线程参数优化，实时显示优化进度。
-- **🧩 策略聚合**: 支持策略参数方案的保存与加载，方便批量管理。
 
 ## 安装说明
 

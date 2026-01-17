@@ -484,5 +484,5 @@ class StrategyService:
             raise ValueError(f"不支持的优化方法: {method}")
 
         # 确保返回完整的结果，包括新增字段
-        logger.debug(f"优化器返回的完整结果: {result}")
+        print(f"优化器返回的完整结果: {result}")
         return result

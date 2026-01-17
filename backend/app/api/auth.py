@@ -56,9 +56,7 @@ async def login(
             ip_address=request.client.host if request.client else None
         ))
     except Exception as e:
-        # 使用 logger 记录错误而不是 print
-        from backend.app.services.strategy_service import logger
-        logger.error(f"Failed to log login event: {e}")
+        print(f"Failed to log login event: {e}")
 
     access_token_expires = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

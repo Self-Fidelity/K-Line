@@ -46,8 +46,7 @@ async def create_strategy(
                 ip_address=request.client.host if request.client else None
             ))
         except Exception as e:
-            from backend.app.services.strategy_service import logger
-            logger.error(f"Failed to log strategy creation: {e}")
+            print(f"Failed to log strategy creation: {e}")
             
         return new_strategy
     except ValueError as e:

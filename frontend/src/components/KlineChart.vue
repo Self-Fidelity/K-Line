@@ -239,7 +239,12 @@ const initCharts = async () => {
   await nextTick();
 
     // Debug log
-    // Debug log removed
+    console.log('Initializing KlineChart', {
+        width: mainChartContainer.value.clientWidth,
+        height: mainChartContainer.value.clientHeight,
+        dataLength: props.data.length,
+        linesLength: props.lines.length
+    });
 
     // Custom price formatter for consistent digit width across all charts
     const formatPrice = (price: number): string => {
@@ -323,7 +328,7 @@ const initCharts = async () => {
     markersPlugin = createSeriesMarkers(candlestickSeries, []);
     
     // Debug series creation
-    // Series created
+    console.log('Series created:', candlestickSeries);
 
     // --- Sub Chart ---
     if (props.showSubChart && subChartContainer.value) {
