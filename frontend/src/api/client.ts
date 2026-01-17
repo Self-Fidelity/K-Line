@@ -37,7 +37,7 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       // token过期或无效，清除token并跳转到登录页
       localStorage.removeItem('token')
-      window.location.href = `${import.meta.env.VITE_BASE_PATH}login`
+      window.location.href = `${import.meta.env.VITE_BASE_PATH}`
     }
     return Promise.reject(error)
   }
