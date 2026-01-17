@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/backend.Dockerfile
+    container_name: kline-backend
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Optional: Mount custom strategies if needed
+      # - ./backend/app/custom_strategies:/app/backend/app/custom_strategies
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - DB_PATH=/app/data/database/kline.db
+      # Add other env vars here
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"  # Expose backend (HostPort:ContainerPort)
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    container_name: kline-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"  # Expose frontend (HostPort:ContainerPort)
+    depends_on:
+      - backend
+
+volumes:
+  data:
+  logs:

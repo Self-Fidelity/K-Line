@@ -16,7 +16,7 @@ class Settings:
     BASE_DIR: Path = Path(__file__).parent.parent.parent
     
     # 数据库配置
-    DATABASE_PATH: Path = BASE_DIR / "data" / "database" / "kline.db"
+    DATABASE_PATH: Path = Path(os.getenv("DATABASE_PATH")) if os.getenv("DATABASE_PATH") else BASE_DIR / "data" / "database" / "kline.db"
     
     # JWT配置
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
