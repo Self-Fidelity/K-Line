@@ -38,6 +38,10 @@ class SQLiteStorage(DataStorage):
         try:
             cursor = conn.cursor()
             
+            # 开启 WAL 模式以提高并发性能
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+            
             # 创建日K线数据表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS stock_daily_kline (
