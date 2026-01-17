@@ -121,6 +121,9 @@
                 </div>
               </div>
             </div>
+            <div v-else-if="form.strategy_name" class="empty-params" style="text-align: center; color: var(--el-text-color-secondary); padding: 20px;">
+              该策略无需额外参数配置
+            </div>
             <el-empty v-else description="请先选择策略" :image-size="60" />
 
             <!-- 操作按钮 -->
