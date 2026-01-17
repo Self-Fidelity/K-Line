@@ -4,6 +4,7 @@
 
 # Run DB initialization script (creates tables if they do not exist)
 python backend/scripts/init_db.py
+python scripts/setup.py
 
 # Execute the original command (uvicorn)
 exec "$@"

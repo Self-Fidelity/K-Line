@@ -30,15 +30,9 @@
    - `SECRET_KEY`: 生成一个随机字符串用于加密。
    - `VITE_API_BASE_URL`: 生产环境通常设为 `/api`（通过 Nginx 代理）。
    - 其他邮件SMTP配置（如果需要）。
+   
+   - `VITE_BASE_PATH`: 设置应用的基础路径 (默认为 /，例如 `http://domain.com/stock/`，VITE_BASE_PATH=/stock/)
 
-3. **前端高级配置 (可选)**
-   如果需要将项目部署在子路径下，请在 `frontend` 目录下新建或修改 `.env` 文件：
-   ```bash
-   # 设置应用的基础路径 (默认为 /)
-   # 例如 `http://domain.com/stock/`
-   VITE_BASE_PATH=/stock/
-   ```
-   **注意**：修改此配置后必须重新构建前端镜像才能生效。
 
 ## 构建与启动
 
