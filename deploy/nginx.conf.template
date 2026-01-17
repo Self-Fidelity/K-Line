@@ -11,8 +11,9 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Frontend Routes
-    location / {
+    # Dynamic Frontend Routes (Root or Subpath)
+    location ${NGINX_BASE_PATH} {
+        alias /usr/share/nginx/html/;
         try_files $uri $uri/ /index.html;
     }
 

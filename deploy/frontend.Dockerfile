@@ -26,7 +26,8 @@ FROM nginx:alpine as production-stage
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 
 # Copy Nginx config
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+# Copy Nginx config template
+COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 
