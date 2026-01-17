@@ -167,12 +167,12 @@ async def get_chip_distribution(
 @router.post("/fetch", response_model=FetchDataResponse)
 async def fetch_data(
     request: FetchDataRequest,
-    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
 ):
     """
-    触发数据获取（仅管理员可用）
+    触发数据获取
     
-    注意：此接口需要管理员权限，用于从 akshare 获取单只股票的数据
+    用于从 akshare 获取单只股票的数据（任何登录用户均可调用）
     """
     try:
         task_id = data_service.fetch_stock_data(request.stock_code or "")
