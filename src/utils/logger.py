@@ -10,7 +10,7 @@ from src.config import settings
 
 
 def setup_logger(
-    name: str = "kline",
+    name: Optional[str] = None,
     level: Optional[str] = None,
     log_file: Optional[str] = None,
 ) -> logging.Logger:

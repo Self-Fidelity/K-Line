@@ -10,12 +10,15 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       # Optional: Mount custom strategies if needed
       # - ./backend/app/custom_strategies:/app/backend/app/custom_strategies
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
       - DB_PATH=/app/data/database/kline.db
+      - TZ=Asia/Shanghai  # 显式设置时区
       # Add other env vars here
     ports:
       - "${BACKEND_PORT:-8000}:8000"  # Expose backend (HostPort:ContainerPort)
@@ -31,8 +34,12 @@ services:
     restart: unless-stopped
     environment:
       - NGINX_BASE_PATH=${VITE_BASE_PATH:-/}
+      - TZ=Asia/Shanghai  # 显式设置时区
     ports:
       - "${FRONTEND_PORT:-80}:80"  # Expose frontend (HostPort:ContainerPort)
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - backend
 
