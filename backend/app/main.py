@@ -90,10 +90,7 @@ app.include_router(param_sets.router, prefix="/api/strategy", tags=["参数集�
 app.include_router(aggregation_schemes.router, prefix="/api/strategy/aggregation-schemes", tags=["聚合策略方案"])
 app.include_router(logs.router, prefix="/api/logs", tags=["系统日志"])
 
-# 启动数据更新服务
-from backend.app.services.data_update_service import DataUpdateService
-update_service = DataUpdateService()
-update_service.start_scheduler()
+
 
 # 挂载静态文件目录（用于图表HTML文件）
 # 添加src目录到路径以获取IMAGES_DIR

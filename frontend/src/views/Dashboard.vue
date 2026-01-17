@@ -194,7 +194,7 @@ const logs = ref<AuditLogInfo[]>([])
 
 const loadStats = async () => {
   try {
-    const stockListRes = await dataAPI.getStockList('main')
+    const stockListRes = await dataAPI.getStockList('all')
     stats.value.stockCount = stockListRes.total
 
     const strategyListRes = await strategyAPI.listStrategies()
@@ -241,7 +241,11 @@ const loadLogs = async () => {
       }
     ]
     
-    logs.value = [...systemLogs, ...res.logs]
+    const allLogs = [...systemLogs, ...res.logs]
+    // 按时间倒序排序
+    logs.value = allLogs.sort((a, b) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
   } catch (error) {
     console.error('加载日志失败:', error)
   }
