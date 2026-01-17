@@ -7,6 +7,7 @@ pandas>=2.1.0
 numpy>=1.24.0
 bokeh>=3.0.0
 python-dotenv>=1.0.0
+mealpy>=3.0.3
 
 # Web Framework & Server
 fastapi>=0.104.0
