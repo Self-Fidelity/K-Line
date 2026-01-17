@@ -371,12 +371,11 @@ const formatDateTime = (dateTimeStr: string) => {
 }
 
 onMounted(async () => {
-  if (isAdmin.value) {
-    await loadConfig()
-    await loadSchedulerStatus()
-    // 每30秒刷新一次调度器状态
-    setInterval(loadSchedulerStatus, 30000)
-  }
+  // 所有用户都可以查看配置和状态
+  await loadConfig()
+  await loadSchedulerStatus()
+  // 每30秒刷新一次调度器状态
+  setInterval(loadSchedulerStatus, 30000)
 })
 </script>
 
