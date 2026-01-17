@@ -18,14 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY requirements.txt .
+# Copy entrypoint script
+COPY backend/scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project
 COPY . .
-
-# Initialize SQLite database (create tables if missing)
-RUN python backend/scripts/init_db.py
-RUN python scripts/setup.py
 
 # Create directory for database
 RUN mkdir -p data/database logs static
@@ -34,4 +33,5 @@ RUN mkdir -p data/database logs static
 EXPOSE 8000
 
 # Command to run the application
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
