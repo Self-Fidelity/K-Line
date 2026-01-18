@@ -9,6 +9,7 @@ export interface StrategyInfo {
   description: string
   detailed_description?: string
   parameter_descriptions?: Record<string, string>
+  parameter_types?: Record<string, string>
   parameters?: Record<string, any>
   is_system: boolean
 }

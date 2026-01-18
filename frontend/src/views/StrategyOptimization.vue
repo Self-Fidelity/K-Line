@@ -115,9 +115,19 @@
               <div v-for="(range, key) in paramRanges" :key="key" class="param-range-item">
                 <div class="label">{{ getParameterLabel(key) }}</div>
                 <div class="range-inputs">
-                  <el-input-number v-model="range[0]" size="small" :controls="false" />
+                  <el-input-number 
+                    v-model="range[0]" 
+                    size="small" 
+                    :controls="false" 
+                    v-bind="getParamProps(key)"
+                  />
                   <span>~</span>
-                  <el-input-number v-model="range[1]" size="small" :controls="false" />
+                  <el-input-number 
+                    v-model="range[1]" 
+                    size="small" 
+                    :controls="false"
+                    v-bind="getParamProps(key)"
+                  />
                 </div>
               </div>
             </div>
@@ -573,9 +583,27 @@ const handleStrategyChange = async (strategyName: string) => {
   const info = strategyInfoMap.value[strategyName]
   if (info && info.parameter_descriptions) {
     for (const [key] of Object.entries(info.parameter_descriptions)) {
-      const defVal = info.parameters?.[key] || 1
-      const minVal = Math.floor(defVal * 0.5) || 1
-      const maxVal = Math.ceil(defVal * 2.0) || (defVal + 10)
+      const defVal = info.parameters?.[key] ?? 1
+      const typeStr = info.parameter_types?.[key] || 'int' // Default to int if unknown
+      
+      let minVal, maxVal
+      
+      if (typeStr === 'float') {
+          // For floats (e.g., 0.03), ±50% range, kept as float
+          minVal = Number((defVal * 0.5).toFixed(4))
+          maxVal = Number((defVal * 2.0).toFixed(4))
+          // Avoid 0 if original was not 0, or handle mostly positive params
+          if (defVal > 0 && minVal === 0) minVal = Number((defVal * 0.1).toFixed(4))
+      } else {
+          // For ints, use floor/ceil
+          minVal = Math.floor(defVal * 0.5)
+          // Ensure min >= 1 for period-like params (simple heuristic)
+          if (minVal < 1 && (key.includes('period') || key.includes('window'))) minVal = 1
+          
+          maxVal = Math.ceil(defVal * 2.0)
+          if (maxVal === defVal) maxVal = defVal + 5 
+      }
+      
       paramRanges[key] = [minVal, maxVal]
     }
   }
@@ -827,6 +855,35 @@ const getMetricLabel = (val: string) => {
     'win_rate': '胜率',
   }
   return map[val] || val
+}
+
+const getParamProps = (key: string) => {
+  const info = strategyInfoMap.value[form.strategy_name]
+  const props: any = { step: 1, precision: 0 }
+  
+  if (!info) return props
+  
+  // 1. Backend types
+  if (info.parameter_types && info.parameter_types[key]) {
+      const typeStr = info.parameter_types[key]
+      if (typeStr === 'float') {
+          props.step = 0.01
+          props.precision = undefined
+      } else {
+          props.step = 1
+          props.precision = 0
+      }
+      return props
+  }
+  
+  // 2. Heuristics fallback
+  const lowerKey = key.toLowerCase()
+  if (lowerKey.includes('dev') || lowerKey.includes('ratio') || lowerKey.includes('threshold') || lowerKey.includes('alpha')) {
+     props.step = 0.01
+     props.precision = undefined
+  }
+  
+  return props
 }
 
 

@@ -219,8 +219,7 @@
               >
                 <el-input-number
                   v-model="strategyParamsMap[strategyName][key]"
-                  :min="getParameterMin(key, strategyName)"
-                  :precision="getParameterPrecision(key)"
+                  v-bind="getParamProps(key, strategyName)"
                   style="width: 200px"
                 />
                 <div v-if="getParameterDescription(key, strategyName)" class="parameter-description">
@@ -246,7 +245,15 @@
       <template #header>
         <div class="card-header">
           <span>比较结果</span>
-
+          <el-button 
+            type="primary" 
+            plain 
+            size="small" 
+            @click="handleToAggregation"
+            :disabled="!compareResult || !compareResult.results || compareResult.results.length === 0"
+          >
+            <el-icon><DataAnalysis /></el-icon> 生成聚合组合
+          </el-button>
         </div>
       </template>
 
@@ -433,7 +440,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Trophy, Download, Collection, Star, StarFilled, Setting } from '@element-plus/icons-vue'
+import { Search, Trophy, Download, Collection, Star, StarFilled, Setting, DataAnalysis } from '@element-plus/icons-vue'
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
@@ -587,52 +594,62 @@ const handleStrategiesChange = async (strategyNames: string[]) => {
   })
 
   // 加载每个策略的信息和参数
+  // 加载每个策略的信息和参数
   for (const strategyName of strategyNames) {
+    // 确保策略信息已加载
     if (!strategyInfoMap.value[strategyName]) {
       try {
         const info = await strategyAPI.getStrategyInfo(strategyName)
         strategyInfoMap.value[strategyName] = info
+      } catch (error: any) {
+        console.error(`加载策略 ${strategyName} 信息失败:`, error)
+        continue // 如果信息加载失败，跳过后续参数初始化
+      }
+    }
 
-        // 初始化策略参数
-        if (!strategyParamsMap[strategyName]) {
-          strategyParamsMap[strategyName] = {}
-        }
-        Object.keys(strategyParamsMap[strategyName]).forEach((key) => delete strategyParamsMap[strategyName][key])
+    // 初始化策略参数 (即使策略信息已缓存，如果参数被删除了也需要重新初始化)
+    if (!strategyParamsMap[strategyName]) {
+       const info = strategyInfoMap.value[strategyName]
+       if (!info) continue
 
-        // 尝试加载保存的参数
-        try {
-          if (compareForm.stock_code) {
+       strategyParamsMap[strategyName] = {}
+       
+       // 尝试加载保存的参数
+       let loadedFromSave = false
+       try {
+         if (compareForm.stock_code) {
              const savedParams = await strategyAPI.getParams(compareForm.stock_code, strategyName)
              if (savedParams) {
                Object.assign(strategyParamsMap[strategyName], savedParams)
-               continue
+               loadedFromSave = true
              }
-          }
-        } catch (e) { console.error(e) }
+         }
+       } catch (e) { console.error(e) }
 
-        // 设置默认参数
-        if (defaultParams[strategyName]) {
-          Object.assign(strategyParamsMap[strategyName], defaultParams[strategyName])
-        } else if (info.parameter_descriptions) {
-          // 自定义策略或无默认配置
-          for (const [key, desc] of Object.entries(info.parameter_descriptions)) {
-            // 简单解析默认值
-             let defVal = 1
-             if (typeof desc === 'string' && desc.includes('默认')) {
-                const match = desc.match(/默认[:\s]*([0-9.]+)/)
-                if (match) defVal = parseFloat(match[1])
-             }
-            strategyParamsMap[strategyName][key] = defVal
+       if (!loadedFromSave) {
+          // 设置默认参数
+          // 优先使用后端提供的参数默认值 (info.parameters)
+          if (info.parameters && Object.keys(info.parameters).length > 0) {
+              Object.assign(strategyParamsMap[strategyName], info.parameters)
+          } else if (defaultParams[strategyName]) {
+              Object.assign(strategyParamsMap[strategyName], defaultParams[strategyName])
+          } else if (info.parameter_descriptions) {
+              // 自定义策略或无默认配置: 尝试解析
+              for (const [key, desc] of Object.entries(info.parameter_descriptions)) {
+                  let defVal = 1
+                  if (typeof desc === 'string' && desc.includes('默认')) {
+                      const match = desc.match(/默认[:\s]*([0-9.]+)/)
+                      if (match) defVal = parseFloat(match[1])
+                  }
+                  strategyParamsMap[strategyName][key] = defVal
+              }
           }
-        }
+       }
+    }
 
-        // 设置第一个策略为活动标签
-        if (!activeStrategyTab.value && strategyNames.length > 0) {
-          activeStrategyTab.value = strategyNames[0]
-        }
-      } catch (error: any) {
-        console.error(`加载策略 ${strategyName} 信息失败:`, error)
-      }
+    // 设置第一个策略为活动标签
+    if (!activeStrategyTab.value && strategyNames.length > 0) {
+      activeStrategyTab.value = strategyNames[0]
     }
   }
 }
@@ -725,6 +742,75 @@ const handleCompare = async () => {
   } finally {
     comparing.value = false
   }
+}
+
+// 导出到聚合分析
+const handleToAggregation = () => {
+  if (!compareResult.value || !compareResult.value.results || compareResult.value.results.length === 0) {
+    ElMessage.warning('请先进行策略比较')
+    return
+  }
+
+  const results = compareResult.value.results.filter((r: any) => !r.error && r.statistics)
+  if (results.length === 0) {
+    ElMessage.warning('没有有效的比较结果')
+    return
+  }
+
+  // 1. 获取排序指标 (默认使用总收益率 total_return)
+  // 注意：stats 对象可能不在 statistics 属性下，或者 structure 不同。
+  // 查看 StrategyCompareResponse 定义: results 是 AnalysisResult[]
+  // AnalysisResult 包含 statistics: StrategyStatistics
+  // StrategyStatistics 包含 cumulative_return
+  const metricKey = 'cumulative_return'
+  
+  // 2. 提取并排序
+  const strategyScores = results.map((r: any) => ({
+    name: r.strategy_name,
+    score: r.statistics[metricKey] || 0,
+    params: strategyParamsMap[r.strategy_name] || {}
+  }))
+
+  // 排序 (从小到大，以便计算插值位置)
+  strategyScores.sort((a: any, b: any) => a.score - b.score)
+
+  // 3. 计算权重 (线性映射 0.1 -> 10)
+  const minScore = strategyScores[0].score
+  const maxScore = strategyScores[strategyScores.length - 1].score
+  const minWeight = 0.1
+  const maxWeight = 10.0
+  const weightRange = maxWeight - minWeight
+  const scoreRange = maxScore - minScore
+
+  const calculatedWeights: Record<string, number> = {}
+  
+  strategyScores.forEach((item: any) => {
+    let weight = minWeight
+    if (scoreRange > 0.000001) {
+       weight = minWeight + ((item.score - minScore) / scoreRange) * weightRange
+    } else {
+       // 如果所有分数一样，或者只有一个策略，给个中间值
+       weight = 5.0 
+    }
+    // 保留1位小数
+    calculatedWeights[item.name] = parseFloat(weight.toFixed(1))
+  })
+
+  // 4. 构建导出数据
+  const importData = {
+    stock_code: compareForm.stock_code,
+    strategy_names: compareForm.strategy_names,
+    params: JSON.parse(JSON.stringify(strategyParamsMap)), // Deep copy
+    weights: calculatedWeights,
+    start_date: compareForm.start_date,
+    end_date: compareForm.end_date
+  }
+
+  // 5. 保存到 LocalStorage 并跳转
+  localStorage.setItem('strategies_aggregation_import', JSON.stringify(importData))
+  ElMessage.success('已生成聚合组合配置，即将跳转...')
+  
+  router.push({ name: 'StrategyAggregation' })
 }
 
 // 重置表单
@@ -924,20 +1010,41 @@ const getParameterDescription = (key: string, strategyName: string): string => {
   return typeof desc === 'string' ? desc : ''
 }
 
-// 获取参数最小值
-const getParameterMin = (key: string, strategyName: string): number => {
-  const strategyInfo = strategyInfoMap.value[strategyName]
-  if (!strategyInfo?.parameter_descriptions) return 1
-  const paramDesc = strategyInfo.parameter_descriptions[key] as any
-  return paramDesc?.min ?? 1
-}
+// 获取参数UI属性 (Min, Step, Precision)
+const getParamProps = (key: string, strategyName: string) => {
+  const info = strategyInfoMap.value[strategyName]
+  const props: any = { step: 1, min: undefined, precision: undefined }
+  
+  if (!info) return props
 
-// 获取参数精度
-const getParameterPrecision = (key: string): number => {
-  if (key.includes('std') || key.includes('oversold') || key.includes('overbought')) {
-    return 1
+  // 1. 尝试使用后端提供的类型信息
+  if (info.parameter_types && info.parameter_types[key]) {
+      const typeStr = info.parameter_types[key]
+      if (typeStr === 'float') {
+          props.step = 0.01
+          // float 不强制 precision，允许输入更多小数位
+          props.precision = undefined 
+      } else if (typeStr === 'int') {
+          props.step = 1
+          props.precision = 0
+      }
+      return props
   }
-  return 0
+
+  // 2. 降级：基于参数名的启发式规则
+  const lowerKey = key.toLowerCase()
+  if (lowerKey.includes('dev') || lowerKey.includes('ratio') || lowerKey.includes('threshold') || lowerKey.includes('alpha') || lowerKey.includes('beta')) {
+     props.step = 0.01
+  } else if (lowerKey.includes('period') || lowerKey.includes('window')) {
+     props.step = 1
+     props.precision = 0
+     props.min = 1
+  }
+  
+  // 3. 再次降级：基于默认值的猜测 (如果没有类型信息)
+  // (Comparison page keeps params in map, we can check value but it might be updated)
+  
+  return props
 }
 
 // 比较结果表格数据

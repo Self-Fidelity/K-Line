@@ -314,6 +314,7 @@
                       </div>
                       <el-input-number
                         v-model="strategyParamsMap[strategyName][key]"
+                        v-bind="getParamProps(key, strategyName)"
                         size="small"
                         style="width: 150px"
                       />
@@ -579,6 +580,8 @@ const activeStrategyTab = ref('')
 const aggregationForm = reactive({
   strategy_names: [] as string[],
   stock_code: '',
+  start_date: '',
+  end_date: '',
 })
 
 const dateRange = ref<[string, string]>(['', ''])
@@ -598,6 +601,9 @@ const aggregationSettings = reactive({
   sell_threshold: 2.0,
   required_strategies: [] as string[],
 })
+
+// Strategy parameter types map (strategy_name -> { param_name: type_str })
+const strategyTypesMap = reactive<Record<string, Record<string, string>>>({})
 
 // Date shortcuts
 const dateShortcuts = [
@@ -698,13 +704,62 @@ const stockSearchLoading = ref(false)
 const currentStockInfo = ref<any>(null)
 
 // Initialize stocks on mount
+// Initialize stocks on mount
 onMounted(async () => {
   try {
     const res = await dataAPI.getStockList('main')
     allStocks.value = res.stocks
     stockOptions.value = allStocks.value.slice(0, 20) // Initial list
     
-    // If stock code exists (e.g. from nav), set info
+    // Check for imported data from StrategyCompare
+    const importDataStr = localStorage.getItem('strategies_aggregation_import')
+    if (importDataStr) {
+      try {
+        const importData = JSON.parse(importDataStr)
+        // 1. Set basic info
+        if (importData.stock_code) aggregationForm.stock_code = importData.stock_code
+        if (importData.start_date && importData.end_date) {
+            dateRange.value = [importData.start_date, importData.end_date]
+            aggregationForm.start_date = importData.start_date
+            aggregationForm.end_date = importData.end_date
+        }
+
+        // 2. Set strategies and trigger change to load metadata
+        if (importData.strategy_names && importData.strategy_names.length > 0) {
+            aggregationForm.strategy_names = importData.strategy_names
+            await handleStrategiesChange(importData.strategy_names)
+
+            // 3. Override params (handleStrategiesChange clears them, so we set them after)
+            if (importData.params) {
+                // Merge params carefully
+                for (const [sName, params] of Object.entries(importData.params)) {
+                    if (strategyParamsMap[sName]) {
+                        Object.assign(strategyParamsMap[sName], params)
+                    } else {
+                        strategyParamsMap[sName] = params as Record<string, any>
+                    }
+                }
+            }
+
+            // 4. Set weights
+            if (importData.weights) {
+                 for (const [sName, weight] of Object.entries(importData.weights)) {
+                     strategyWeightsMap[sName] = weight as number
+                 }
+            }
+        }
+        
+        // Clear storage
+        localStorage.removeItem('strategies_aggregation_import')
+        ElMessage.success('已自动加载策略组合配置')
+        
+      } catch (e) {
+        console.error('Failed to parse import data', e)
+        localStorage.removeItem('strategies_aggregation_import')
+      }
+    }
+
+    // If stock code exists (e.g. from nav or import), set info
     if (aggregationForm.stock_code) {
       handleStockChange(aggregationForm.stock_code)
     }
@@ -888,6 +943,7 @@ const loadStrategyParams = async (strategyName: string) => {
 
     strategyParamDescsMap[strategyName] = descs
     strategyParamsMap[strategyName] = params
+    strategyTypesMap[strategyName] = info.parameter_types || {}
   } catch (error) {
     console.error(`Failed to load params for ${strategyName}:`, error)
     // Even if API fails, try to use defaults so UI isn't empty
@@ -1161,6 +1217,40 @@ watch(totalWeight, (newTotal, oldTotal) => {
     aggregationSettings.sell_threshold = Math.min(newTotal, aggregationSettings.sell_threshold * ratio)
   }
 })
+
+
+
+// 获取参数UI属性 (Min, Step, Precision)
+const getParamProps = (key: string, strategyName: string) => {
+  const types = strategyTypesMap[strategyName]
+  const props: any = { step: 1, min: undefined, precision: undefined }
+  
+  // 1. 尝试使用后端提供的类型信息
+  if (types && types[key]) {
+      const typeStr = types[key]
+      if (typeStr === 'float') {
+          props.step = 0.01
+          // float 不强制 precision，允许输入更多小数位
+          props.precision = undefined 
+      } else if (typeStr === 'int') {
+          props.step = 1
+          props.precision = 0
+      }
+      return props
+  }
+
+  // 2. 降级：基于参数名的启发式规则
+  const lowerKey = key.toLowerCase()
+  if (lowerKey.includes('dev') || lowerKey.includes('ratio') || lowerKey.includes('threshold') || lowerKey.includes('alpha') || lowerKey.includes('beta')) {
+     props.step = 0.01
+  } else if (lowerKey.includes('period') || lowerKey.includes('window')) {
+     props.step = 1
+     props.precision = 0
+     props.min = 1
+  }
+  
+  return props
+}
 
 // Initialize
 onMounted(() => {

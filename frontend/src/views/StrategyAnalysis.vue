@@ -384,6 +384,7 @@
                 v-model="strategyParams[key]" 
                 style="width: 100%"
                 controls-position="right"
+                v-bind="getParamProps(key)"
               />
             </el-form-item>
           </el-form>
@@ -783,6 +784,34 @@ const getParameterLabel = (key: string): string => {
   return labelMap[key] || key
 }
 
+const getParamProps = (key: string) => {
+  // 1. 优先使用后端提供的类型信息
+  if (currentStrategyInfo.value?.parameter_types?.[key]) {
+    const typeName = currentStrategyInfo.value.parameter_types[key]
+    if (typeName === 'int') {
+      return { step: 1, precision: 0 }
+    } else if (typeName === 'float') {
+      return { step: 0.01 } // 不强制 precision，允许用户自由输入
+    }
+  }
+
+  // 2. 降级方案：根据参数名猜测
+  // 整数类参数
+  const intKeys = ['period', 'window', 'ma', 'long', 'short', 'fast', 'slow', 'signal', 'start', 'end', 'lookback']
+  if (intKeys.some(k => key.toLowerCase().includes(k)) && !key.toLowerCase().includes('ratio')) {
+    return { step: 1, precision: 0 }
+  }
+  
+  // 浮点类参数
+  const floatKeys = ['dev', 'ratio', 'threshold', 'tolerance', 'alpha', 'beta', 'gamma', 'rate', 'factor']
+  if (floatKeys.some(k => key.toLowerCase().includes(k))) {
+    return { step: 0.01 }
+  }
+  
+  // 默认宽容模式
+  return { step: 1 }
+}
+
 // 默认参数配置
 const defaultParams: Record<string, Record<string, number>> = {
   'MA Strategy': { short_period: 5, long_period: 20 },
@@ -869,53 +898,61 @@ const handleStrategyChange = async (strategyName: string) => {
   Object.keys(strategyParams).forEach(k => delete strategyParams[k])
   
   try {
-    // 先在列表中查找，看是系统策略还是自定义策略
-    const strategy = strategies.value.find(s => s.name === strategyName)
-    
-    if (strategy) {
-       // 如果已有了详细信息则直接使用，否则请求API
-       // 注意：列表返回的信息可能不全，最好还是请求一次详情
-       if (strategy.is_system) {
-          const info = await strategyAPI.getStrategyInfo(strategyName)
-          currentStrategyInfo.value = info
-       } else {
-          // 自定义策略需要找到ID来获取详情，或者直接使用列表中的信息（如果够的话）
-          // 这里假设 name 是唯一的
-          // customStrategyAPI.getDetail 需要 id，所以我们得从列表中找到 id
-          const customStrategy = customStrategies.value.find(s => s.name === strategyName)
-          
-          if (customStrategy && 'id' in customStrategy) {
-             const res = await customStrategyAPI.getDetail((customStrategy as any).id)
-             
-             // 转换为 StrategyInfo 格式
-             currentStrategyInfo.value = {
-                name: res.data.name,
-                description: res.data.description,
-                detailed_description: res.data.detailed_description,
-                parameter_descriptions: res.data.parameter_descriptions,
-                is_system: false
-             }
-          }
+    // 统一通过 API 获取策略详情（无论是系统还是自定义）
+    // 后端 StrategyService.get_strategy_info 已经处理了自定义策略的元数据加载
+    console.log('正在请求策略详情:', strategyName)
+    try {
+      const info = await strategyAPI.getStrategyInfo(strategyName)
+      if (info) {
+        currentStrategyInfo.value = info
+        console.log('获取到策略详情:', info)
+      } else {
+        // Fallback: 尝试从列表信息构建（如果API失败）
+        const strategy = strategies.value.find(s => s.name === strategyName) || 
+                         customStrategies.value.find(s => s.name === strategyName)
+        if (strategy) {
+          currentStrategyInfo.value = { ...strategy, is_system: 'is_system' in strategy ? strategy.is_system : true }
+        }
+      }
+    } catch (err) {
+      console.warn('获取策略详情API失败，使用本地缓存:', err)
+       const strategy = strategies.value.find(s => s.name === strategyName) || 
+                        customStrategies.value.find(s => s.name === strategyName)
+       if (strategy) {
+          currentStrategyInfo.value = { ...strategy, is_system: 'is_system' in strategy ? strategy.is_system : true }
+       }
+    }
+  
+    // 3. 初始化参数
+    const info = currentStrategyInfo.value
+    let params: Record<string, number> = {}
+
+    // A. 优先使用后端提供的参数默认值 (info.parameters)
+    if (info && info.parameters && Object.keys(info.parameters).length > 0) {
+       console.log('使用后端默认参数:', info.parameters)
+       params = { ...info.parameters }
+    } else {
+       // B. 降级：使用本地硬编码默认值
+       params = defaultParams[strategyName] || {}
+       
+       // C. 再次降级：从参数描述中猜测
+       if (info && info.parameter_descriptions) {
+         Object.keys(info.parameter_descriptions).forEach(key => {
+           if (params[key] === undefined) {
+             params[key] = extractDefaultValue(key, info.parameter_descriptions![key])
+           }
+         })
        }
     }
 
-    // 设置默认参数
-    if (defaultParams[strategyName]) {
-      // 系统策略使用预定义的默认参数
-      Object.assign(strategyParams, defaultParams[strategyName])
-    } else if (currentStrategyInfo.value?.parameter_descriptions) {
-      // 自定义策略：从parameter_descriptions中提取参数并设置默认值
-      const paramDescs = currentStrategyInfo.value.parameter_descriptions
-      
-      for (const [key, desc] of Object.entries(paramDescs)) {
-        const description = typeof desc === 'string' ? desc : (desc as any)?.description || ''
-        strategyParams[key] = extractDefaultValue(key, description)
-      }
-    }
+    // 正确更新 reactive 对象
+    Object.keys(strategyParams).forEach(k => delete strategyParams[k])
+    Object.assign(strategyParams, params)
   } catch (e) {
     console.error('加载策略信息失败:', e)
   }
 }
+
 
 const searchStocks = async (query: string, cb: any) => {
   if (!query) return cb([])
