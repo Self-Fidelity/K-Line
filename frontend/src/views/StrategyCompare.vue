@@ -825,10 +825,10 @@ const handleReset = () => {
   compareResult.value = null
   activeStrategyTab.value = ''
 
-  // 设置默认日期（最近30天）
+  // 设置默认日期（最近6个月）
   const end = new Date()
   const start = new Date()
-  start.setDate(start.getDate() - 30)
+  start.setMonth(start.getMonth() - 6)
   dateRange.value = [
     start.toISOString().split('T')[0],
     end.toISOString().split('T')[0]
@@ -1250,10 +1250,10 @@ onMounted(() => {
   loadStrategies()
   loadFavorites()
 
-  // 设置默认日期（最近30天）
+  // 设置默认日期（最近6个月）
   const end = new Date()
   const start = new Date()
-  start.setDate(start.getDate() - 30)
+  start.setMonth(start.getMonth() - 6)
   dateRange.value = [
     start.toISOString().split('T')[0],
     end.toISOString().split('T')[0]
