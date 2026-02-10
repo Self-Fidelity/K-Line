@@ -3,7 +3,7 @@
 # 📈 K-Line System
 
 <p align="center">
-  <em>现代化的中国股市数据分析与策略回测系统</em>
+  <em>A股数据分析与策略回测系统</em>
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@
 ### 📉 可视化与复盘
 - 📊 **专业 K 线图** - 集成 TradingView Lightweight Charts，支持缩放、平移
 - 📐 **技术指标** - 内置 MA、MACD、RSI、布林带等多种指标，支持自定义
-- 🎲 **筹码分布 (CYQ)** - 🆕 独家实现的筹码分布指标，帮助分析支撑压力位
+- 🎲 **筹码分布 (CYQ)** - 🆕 实现的筹码分布指标，帮助分析支撑压力位
 - 🎯 **交易信号标记** - 在图表上直观展示策略生成的买卖点
 
 ### 🔐 系统管理
@@ -192,8 +192,8 @@ K-Line/
 
 <div align="center">
 
-**⭐ 如果这个项目对您有帮助，请给我们一个 Star！**
+**⭐ 敢承诺100%AI编程，不含任何手工成分！**
 
-Made with ❤️ by K-Line Team
+Made with ❤️ by HIN
 
 </div>
