@@ -33,7 +33,11 @@ class DailyTaskService:
         self.notification = NotificationService()
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
         self._last_run: Dict[str, Any] = {}
+        self._run_history: List[Dict[str, Any]] = []  # 最近运行历史
+        self._last_buy_signals: List[Dict[str, Any]] = []  # 最近买入信号
         self._is_running = False
+        self._max_history = 30  # 保留最近30条记录
+        self._enable_email = os.getenv("ENABLE_EMAIL_NOTIFY", "true").lower() == "true"
 
     # ────────── 定时任务注册 ──────────
 
@@ -77,9 +81,14 @@ class DailyTaskService:
                 self._is_running = False
                 return {"status": "no_stocks"}
 
-            # 2. 批量优化
+            # 2. 批量优化（带进度上报）
             logger.info(f"步骤2: 开始批量优化...")
-            results = self.batch_optimizer.run_batch(stock_codes)
+            results = self.batch_optimizer.run_batch(
+                stock_codes,
+                progress_callback=lambda p: None,  # progress 通过 self.batch_optimizer.progress 轮询
+            )
+
+            # 3. 收集买入信号
 
             # 3. 收集买入信号
             buy_signals = []
@@ -97,13 +106,16 @@ class DailyTaskService:
 
             logger.info(f"步骤3: 发现 {len(buy_signals)} 个买入信号")
 
-            # 4. 发送邮件
-            logger.info("步骤4: 发送邮件...")
-            self.notification.send_buy_signal_email(
-                buy_signals=buy_signals,
-                total_stocks=len(stock_codes),
-                errors=errors if errors else None,
-            )
+            # 4. 发送邮件（受开关控制）
+            if self._enable_email:
+                logger.info("步骤4: 发送邮件...")
+                self.notification.send_buy_signal_email(
+                    buy_signals=buy_signals,
+                    total_stocks=len(stock_codes),
+                    errors=errors if errors else None,
+                )
+            else:
+                logger.info("步骤4: 邮件通知已关闭")
 
             elapsed = (datetime.now() - start_time).total_seconds()
             self._last_run = {
@@ -114,6 +126,10 @@ class DailyTaskService:
                 "errors": len(errors),
                 "status": "success",
             }
+            self._last_buy_signals = buy_signals
+            self._run_history.insert(0, self._last_run.copy())
+            if len(self._run_history) > self._max_history:
+                self._run_history = self._run_history[: self._max_history]
 
             logger.info(f"========== 每日任务完成 ({elapsed:.0f}s) ==========")
             self._is_running = False
@@ -148,13 +164,25 @@ class DailyTaskService:
             return []
 
     def get_status(self) -> Dict[str, Any]:
-        """获取最近一次运行状态"""
+        """获取最近运行状态（含进度和历史）"""
+        hour = int(os.getenv("DAILY_TASK_HOUR", "15"))
+        minute = int(os.getenv("DAILY_TASK_MINUTE", "30"))
         return {
-            "last_run": self._last_run,
+            "last_run": self._last_run or None,
+            "run_history": self._run_history,
+            "last_buy_signals": self._last_buy_signals,
             "is_running": self._is_running,
-            "config": {
-                "hour": int(os.getenv("DAILY_TASK_HOUR", "15")),
-                "minute": int(os.getenv("DAILY_TASK_MINUTE", "30")),
+            "config": {"hour": hour, "minute": minute},
+            "email_enabled": self._enable_email,
+            "progress": {
+                "phase": self.batch_optimizer.progress.phase,
+                "stock_index": self.batch_optimizer.progress.stock_index,
+                "stock_total": self.batch_optimizer.progress.stock_total,
+                "stock_code": self.batch_optimizer.progress.stock_code,
+                "strategy_index": self.batch_optimizer.progress.strategy_index,
+                "strategy_total": self.batch_optimizer.progress.strategy_total,
+                "strategy_name": self.batch_optimizer.progress.strategy_name,
+                "elapsed": self.batch_optimizer.progress.elapsed_seconds,
             },
         }
 

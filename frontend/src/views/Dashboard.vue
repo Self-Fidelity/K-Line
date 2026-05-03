@@ -161,6 +161,33 @@
           </div>
         </el-card>
 
+        <el-card v-if="isAdmin" class="daily-task-card">
+          <template #header>
+            <div class="card-header">
+              <el-icon><AlarmClock /></el-icon>
+              <span>每日优化任务</span>
+              <el-tag v-if="taskStatus?.is_running" type="warning" size="small">运行中</el-tag>
+              <el-tag v-else-if="taskStatus?.last_run" type="success" size="small">已就绪</el-tag>
+              <el-tag v-else type="info" size="small">待运行</el-tag>
+            </div>
+          </template>
+          <div v-if="taskStatus" class="task-body">
+            <div class="task-row">
+              <span class="task-label">定时</span>
+              <span class="task-value">{{ String(taskStatus.config.hour).padStart(2,'0') }}:{{ String(taskStatus.config.minute).padStart(2,'0') }} 每日</span>
+            </div>
+            <div v-if="taskStatus.last_run" class="task-row">
+              <span class="task-label">上次</span>
+              <span class="task-value">{{ taskStatus.last_run.time?.slice(11,19) || '-' }}</span>
+              <span class="task-meta">{{ taskStatus.last_run.elapsed_seconds?.toFixed(0) }}s · {{ taskStatus.last_run.buy_signals || 0 }}信号</span>
+            </div>
+            <el-button size="small" type="primary" @click="$router.push('/settings/daily-task')" style="margin-top:8px;width:100%">
+              <el-icon><ArrowRight /></el-icon> 进入管理
+            </el-button>
+          </div>
+          <div v-else class="task-body" v-loading="true" style="min-height:60px"></div>
+        </el-card>
+
         <el-card class="log-card">
           <template #header>
             <div class="card-header">
@@ -191,11 +218,13 @@ import { useRouter } from 'vue-router'
 import { 
   DataLine, TrendCharts, Cpu, Document, 
   Lightning, Bell, Monitor, Histogram, 
-  DataAnalysis, Setting, Aim, Connection, Files, User, SwitchButton
+  DataAnalysis, Setting, Aim, Connection, Files, User, SwitchButton,
+  AlarmClock, ArrowRight,
 } from '@element-plus/icons-vue'
 import { dataAPI } from '@/api/data'
 import { strategyAPI } from '@/api/strategy'
 import { logsAPI, type AuditLogInfo } from '@/api/logs'
+import { dailyTaskAPI, type DailyTaskStatus } from '@/api/dailyTask'
 import { useAuthStore } from '@/stores/auth'
 import { computed } from 'vue'
 import { useDateFormat } from '@vueuse/core'
@@ -225,6 +254,8 @@ const stats = ref({
   stockCount: 0,
   strategyCount: 0,
 })
+
+const taskStatus = ref<DailyTaskStatus | null>(null)
 
 const logs = ref<AuditLogInfo[]>([])
 
@@ -295,7 +326,14 @@ const formatDate = (isoString: string) => {
 onMounted(() => {
   loadStats()
   loadLogs()
+  loadTaskStatus()
 })
+
+const loadTaskStatus = async () => {
+  const authStore = useAuthStore()
+  if (authStore.user?.role !== 'admin') return
+  try { taskStatus.value = await dailyTaskAPI.getStatus() } catch { /* silent */ }
+}
 </script>
 
 <style scoped lang="scss">
@@ -493,6 +531,22 @@ onMounted(() => {
   text-align: center;
   padding: 30px;
   color: var(--el-text-color-placeholder);
+}
+
+// ── 每日任务卡片 ──
+.daily-task-card {
+  .task-body {
+    font-size: 13px;
+  }
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    .task-label { color: var(--el-text-color-secondary); width: 36px; flex-shrink: 0; }
+    .task-value { font-weight: 500; }
+    .task-meta { color: var(--el-text-color-placeholder); font-size: 12px; margin-left: auto; }
+  }
 }
 
 // ── 卡片标题 ──

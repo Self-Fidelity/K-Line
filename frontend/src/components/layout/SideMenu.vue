@@ -43,6 +43,15 @@
         <template #title>K线复盘</template>
       </el-menu-item>
 
+      <el-sub-menu index="settings">
+        <template #title>
+          <el-icon><Setting /></el-icon>
+          <span>系统设置</span>
+        </template>
+        <el-menu-item index="/settings/users">用户管理</el-menu-item>
+        <el-menu-item index="/settings/daily-task">每日任务</el-menu-item>
+      </el-sub-menu>
+
     </el-menu>
   </div>
 </template>
@@ -50,7 +59,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { DataBoard, Coin, TrendCharts, Histogram } from '@element-plus/icons-vue'
+import { DataBoard, Coin, TrendCharts, Histogram, Setting } from '@element-plus/icons-vue'
 
 defineProps<{
   isCollapse: boolean

@@ -61,6 +61,19 @@ class BatchResult:
     errors: List[str] = field(default_factory=list)
 
 
+@dataclass
+class ProgressReport:
+    """优化进度报告（供前端轮询）"""
+    phase: str = "idle"  # idle | params | weights | signals | done
+    stock_index: int = 0
+    stock_total: int = 0
+    stock_code: str = ""
+    strategy_index: int = 0
+    strategy_total: int = 0
+    strategy_name: str = ""
+    elapsed_seconds: float = 0
+
+
 class BatchOptimizer:
     """批量优化执行器"""
 
@@ -81,6 +94,8 @@ class BatchOptimizer:
         self.data_service = DataService()
         self.storage = get_storage()
         self.statistics = StrategyStatistics()
+        self.progress = ProgressReport()
+        self._progress_callback = None  # 可选的回调函数
 
     # ────────── 主入口 ──────────
 
@@ -89,6 +104,7 @@ class BatchOptimizer:
         stock_codes: List[str],
         strategy_names: Optional[List[str]] = None,
         lookback_months: int = LOOKBACK_MONTHS,
+        progress_callback=None,
     ) -> List[BatchResult]:
         """
         对股票列表批量执行优化
@@ -97,6 +113,7 @@ class BatchOptimizer:
             stock_codes: 股票代码列表
             strategy_names: 策略名称列表，None=全部
             lookback_months: 数据回溯月数
+            progress_callback: 进度回调 fn(ProgressReport)
 
         Returns:
             每只股票的批量结果
@@ -104,41 +121,44 @@ class BatchOptimizer:
         if strategy_names is None:
             strategy_names = self.strategy_manager.list_strategies()
 
+        self._progress_callback = progress_callback
+        total = max(len(stock_codes), 1)
+
         logger.info(
             f"开始批量优化: {len(stock_codes)} 只股票, "
             f"{len(strategy_names)} 个策略, {self.MAX_WORKERS} 线程"
         )
 
         results: List[BatchResult] = []
+        t_start = datetime.now()
 
-        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as pool:
-            futures = {
-                pool.submit(
-                    self._optimize_single_stock, code, strategy_names, lookback_months
-                ): code
-                for code in stock_codes
-            }
+        # 逐股票优化（保持 ThreadPool 并行在单股票内部做）
+        for idx, code in enumerate(stock_codes):
+            self._report_progress(
+                phase="params", stock_index=idx + 1, stock_total=total,
+                stock_code=code, strategy_total=len(strategy_names),
+                elapsed=(datetime.now() - t_start).total_seconds(),
+            )
+            try:
+                result = self._optimize_single_stock(code, strategy_names, lookback_months)
+                results.append(result)
+                n_params = len(result.param_results)
+                n_buy = len(result.buy_signals)
+                logger.info(f"[{code}] 完成: {n_params} 参数优化, {n_buy} 买入信号")
+            except Exception as e:
+                logger.error(f"[{code}] 批量优化失败: {e}")
+                results.append(BatchResult(stock_code=code, stock_name="", errors=[str(e)]))
 
-            for future in as_completed(futures):
-                code = futures[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    n_params = len(result.param_results)
-                    n_buy = len(result.buy_signals)
-                    logger.info(
-                        f"[{code}] 完成: {n_params} 参数优化, "
-                        f"{n_buy} 买入信号"
-                    )
-                except Exception as e:
-                    logger.error(f"[{code}] 批量优化失败: {e}")
-                    results.append(BatchResult(
-                        stock_code=code,
-                        stock_name="",
-                        errors=[str(e)],
-                    ))
-
+        self._report_progress(phase="done", stock_index=total, stock_total=total, elapsed=(datetime.now() - t_start).total_seconds())
         return results
+
+    def _report_progress(self, **kwargs):
+        """上报进度"""
+        for k, v in kwargs.items():
+            if hasattr(self.progress, k):
+                setattr(self.progress, k, v)
+        if self._progress_callback:
+            self._progress_callback(self.progress)
 
     # ────────── 单股票优化 ──────────
 
@@ -196,7 +216,13 @@ class BatchOptimizer:
     ) -> List[OptimizationResult]:
         """对单只股票的所有策略执行参数优化"""
         results = []
-        for sname in strategy_names:
+        total = len(strategy_names)
+        for idx, sname in enumerate(strategy_names):
+            self.progress.strategy_index = idx + 1
+            self.progress.strategy_name = sname
+            if self._progress_callback:
+                self._progress_callback(self.progress)
+
             try:
                 strategy = self.strategy_manager.get_strategy(sname)
                 if strategy is None:
