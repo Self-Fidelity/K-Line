@@ -120,16 +120,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Star, StarFilled } from '@element-plus/icons-vue'
 import { dataAPI, type StockInfo } from '@/api/data'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import { useAuthStore } from '@/stores/auth'
+import { useStockDataStore } from '@/stores/stockData'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const stockDataStore = useStockDataStore()
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -230,34 +232,32 @@ const isAdmin = computed(() => {
 const loadStockList = async () => {
   loading.value = true
   try {
-    // 普通用户只能从数据库读取，不再使用 refresh 参数
-    const response = await dataAPI.getStockList(selectedMarket.value)
-    stocks.value = response.stocks
+    const result = await stockDataStore.getStockList(selectedMarket.value)
+    stocks.value = result.stocks
     currentPage.value = 1
-    if (response.total > 0) {
-      ElMessage.success(`已加载 ${response.total} 只股票`)
+    if (result.total > 0) {
+      ElMessage.success(`已加载 ${result.total} 只股票`)
     } else {
       ElMessage.warning('该市场分类下暂无股票数据')
     }
   } catch (error: any) {
     console.error('加载股票列表失败:', error)
-    ElMessage.error(error.response?.data?.detail || '加载股票列表失败')
+    ElMessage.error(error?.message || '加载股票列表失败')
   } finally {
     loading.value = false
   }
 }
 
 const handleRefresh = async () => {
-  // 只有管理员才能刷新股票列表（从 API 获取）
   refreshing.value = true
   try {
-    const response = await dataAPI.refreshStockList(selectedMarket.value)
-    stocks.value = response.stocks
+    const result = await stockDataStore.refreshStockList(selectedMarket.value)
+    stocks.value = result.stocks
     currentPage.value = 1
-    ElMessage.success(`已从 API 刷新股票列表，共 ${response.total} 只股票`)
+    ElMessage.success(`已从 API 刷新股票列表，共 ${result.total} 只股票`)
   } catch (error: any) {
     console.error('刷新股票列表失败:', error)
-    ElMessage.error(error.response?.data?.detail || '刷新股票列表失败（需要管理员权限）')
+    ElMessage.error(error?.message || '刷新股票列表失败（需要管理员权限）')
   } finally {
     refreshing.value = false
   }

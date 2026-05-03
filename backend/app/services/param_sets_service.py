@@ -2,7 +2,7 @@
 
 from typing import Optional, List, Dict, Any
 from backend.app.models.param_sets import ParamSetCreate
-from src.data_storage.sqlite_storage import SQLiteStorage
+from backend.app.dependencies import get_storage
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -10,9 +10,9 @@ logger = get_logger(__name__)
 
 class ParamSetsService:
     """参数集服务类"""
-    
+
     def __init__(self):
-        self.storage = SQLiteStorage()
+        self.storage = get_storage()
     
     def create_param_set(self, param_set: ParamSetCreate) -> Optional[int]:
         """创建参数集"""

@@ -26,7 +26,7 @@
 ### 📊 数据中心
 - 🔄 **自动更新** - 集成 AkShare，自动获取并增量更新 A 股历史行情数据
 - 🗂️ **数据管理** - 支持手动触发全量或增量更新，实时查看数据状态
-- ⚡ **高效存储** - 使用 SQLite 进行本地存储，支持快速查询
+- ⚡ **高效存储** - 生产环境使用 PostgreSQL + 连接池，开发可用 SQLite 回退，支持快速查询
 
 ### 🧪 策略实验室
 - 📈 **单策略分析** - 针对单只股票运行特定策略，查看买卖信号和详细回测报告
@@ -53,7 +53,7 @@
 <table>
   <tr>
     <td><strong>后端</strong></td>
-    <td>Python 3.12 • FastAPI • Pandas • NumPy • SQLite • SQLAlchemy</td>
+    <td>Python 3.12 • FastAPI • Pandas • NumPy • PostgreSQL • SQLAlchemy • RestrictedPython</td>
   </tr>
   <tr>
     <td><strong>前端</strong></td>
@@ -61,7 +61,7 @@
   </tr>
   <tr>
     <td><strong>部署</strong></td>
-    <td>Docker • Docker Compose • Nginx</td>
+    <td>Docker • Docker Compose • Nginx • PostgreSQL</td>
   </tr>
 </table>
 
@@ -78,9 +78,12 @@
 git clone https://github.com/yourusername/K-Line.git
 cd K-Line
 
-# 2. 配置环境
+# 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env 文件配置端口和密钥
+# 编辑 .env 文件配置：
+#   - SECRET_KEY: 随机字符串（必须修改！）
+#   - POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB: 数据库凭据
+#   - FRONTEND_PORT / BACKEND_PORT: 服务端口
 
 # 3. 启动服务
 docker-compose up -d --build
@@ -106,8 +109,8 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 # 2. 安装依赖
 uv pip install -r requirements.txt
 
-# 3. 初始化数据库
-uv run python backend/app/init_db.py
+# 3. 初始化数据库（确保 PostgreSQL 已启动，或设置 DATABASE_TYPE=sqlite 使用本地 SQLite）
+uv run python scripts/setup.py
 
 # 4. 启动服务
 uv run uvicorn backend.app.main:app --reload
@@ -141,10 +144,12 @@ K-Line/
 │   │   ├── components/      # 通用组件
 │   │   └── plugins/         # 图表插件 (CYQ等)
 │   └── ...
-├── 📁 data/                 # 数据存储 (SQLite DB)
+├── 📁 data/                 # 数据存储 & 节假日配置
+│   ├── china_holidays.json  # A股休市日历
+│   └── ...
 ├── 📁 deploy/               # 部署相关配置
-├── 🐳 docker-compose.yml    # Docker 编排文件
-└── 📋 requirements.txt      # 后端依赖
+├── 🐳 docker-compose.yml    # Docker 编排文件（含 PostgreSQL）
+└── 📋 requirements.txt      # Python 依赖
 ```
 
 ---

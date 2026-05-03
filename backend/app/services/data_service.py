@@ -1,7 +1,11 @@
-"""数据服务：封装SQLiteStorage"""
+"""数据服务：封装数据存储层
+
+根据配置自动选择 PostgreSQL 或 SQLite 存储后端。
+"""
 
 from typing import Optional
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import sys
 
@@ -10,7 +14,7 @@ backend_dir = Path(__file__).parent.parent.parent
 src_dir = backend_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
-from src.data_storage.sqlite_storage import SQLiteStorage
+from backend.app.dependencies import get_storage
 from src.data_fetcher.fetcher import StockDataFetcher
 from src.data_fetcher.stock_list import StockListManager
 from src.utils.logger import get_logger
@@ -20,20 +24,26 @@ logger = get_logger(__name__)
 
 class DataService:
     """数据服务类"""
-    
+
     def __init__(self):
         """初始化数据服务"""
-        self.storage = SQLiteStorage()
+        self.storage = get_storage()
         self.fetcher = StockDataFetcher()
         self.stock_list_manager = StockListManager()
-    
+        self._stock_name_cache: dict[str, str] = {}
+
     def get_stock_name(self, stock_code: str) -> Optional[str]:
-        """获取股票名称"""
+        """获取股票名称（带缓存）"""
+        if stock_code in self._stock_name_cache:
+            return self._stock_name_cache[stock_code]
+
         try:
             df = self.stock_list_manager.get_stock_list(market='all')
             row = df[df['code'] == stock_code]
             if not row.empty:
-                return row.iloc[0]['name']
+                name = row.iloc[0]['name']
+                self._stock_name_cache[stock_code] = name
+                return name
             return None
         except Exception as e:
             logger.error(f"获取股票名称失败: {e}")
@@ -46,14 +56,14 @@ class DataService:
         force_from_api: bool = False,
     ) -> pd.DataFrame:
         """
-        获取股票列表
-        
+        获取股票列表（批量获取最新日期，避免 N+1 查询）
+
         Args:
             market: 市场类型，'main'（沪深主板）、'sse'（上海主板）、
                    'szse'（深圳主板）、'cyb'（创业板）、'kcb'（科创板）、'all'（全部）
             refresh: 是否刷新缓存（已废弃，仅用于兼容）
             force_from_api: 是否强制从 API 获取（仅管理员可用）
-        
+
         Returns:
             股票列表 DataFrame，包含字段：code, name, market, latest_date
         """
@@ -62,19 +72,20 @@ class DataService:
             refresh=refresh,
             force_from_api=force_from_api,
         )
-        
-        # 添加最新数据日期
-        df["latest_date"] = df["code"].apply(lambda code: self._get_latest_date(code))
-        
+
+        # 批量获取最新数据日期（单次 SQL 查询替代 N 次）
+        latest_map = self._get_all_latest_dates()
+        df["latest_date"] = df["code"].map(latest_map).replace({np.nan: None})
+
         return df
-    
-    def _get_latest_date(self, stock_code: str) -> Optional[str]:
-        """获取股票最新数据日期"""
+
+    def _get_all_latest_dates(self) -> dict[str, Optional[str]]:
+        """批量获取所有股票的最新数据日期（单次查询）"""
         try:
-            return self.storage.get_latest_date(stock_code)
+            return self.storage.get_all_latest_dates()
         except Exception as e:
-            logger.error(f"获取最新数据日期失败: {e}")
-            return None
+            logger.error(f"批量获取最新日期失败: {e}")
+            return {}
     
     def get_kline_data(
         self,

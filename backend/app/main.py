@@ -1,40 +1,76 @@
 """FastAPI 主应用"""
 
-from fastapi import FastAPI
+import logging
+import sys
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
-import logging
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 from backend.app.config import settings
-from pathlib import Path
-import sys
 
 # 配置日志
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-# )
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-# logger = logging.getLogger(__name__)
-
-# settings = get_settings() # This line will be removed or changed if settings is directly imported
+# 速率限制器
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 # 创建FastAPI应用
 app = FastAPI(
     title="K-Line API",
     description="K线数据和策略分析API",
     version="1.0.0",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
 )
 
-# 配置CORS - 允许前端访问
+# 注册速率限制器
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# 配置CORS - 生产环境限制来源
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 允许所有来源
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],  # 允许所有方法
-    allow_headers=["*"],  # 允许所有头部
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+# 请求日志和计时中间件
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """记录所有API请求及其响应时间"""
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+
+    # 跳过静态文件和文档请求
+    if not request.url.path.startswith(("/static/", "/docs", "/redoc", "/openapi.json")):
+        logger.info(
+            "request",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": round(duration * 1000, 2),
+                "client": request.client.host if request.client else "unknown",
+            },
+        )
+
+    return response
 
 
 @app.get("/")
@@ -43,7 +79,7 @@ async def root():
     return JSONResponse(
         content={
             "message": "K-Line API",
-            "version": "0.1.0",
+            "version": "1.0.0",
             "docs": "/docs",
         }
     )
@@ -51,11 +87,10 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """健康检查"""
+    """健康检查端点"""
     return JSONResponse(content={"status": "healthy"})
 
 
-# 导入路由
 # 导入路由
 from backend.app.api import (
     auth,

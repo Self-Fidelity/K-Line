@@ -28,8 +28,10 @@ uv pip install -r requirements.txt -r backend/requirements.txt
 ### 3. 初始化数据库
 
 ```bash
-# 使用 uv run（无需激活虚拟环境）
-uv run python backend/scripts/init_db.py
+# 本地开发可用 SQLite（无需 PostgreSQL）
+export DATABASE_TYPE=sqlite
+
+# 初始化数据库表和目录
 uv run python scripts/setup.py
 ```
 

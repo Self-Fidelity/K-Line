@@ -9,16 +9,25 @@ bokeh>=3.0.0
 python-dotenv>=1.0.0
 mealpy>=3.0.3
 
+# Database
+SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
 # Web Framework & Server
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
+slowapi>=0.1.9
 
 # Authentication & Security
 python-jose[cryptography]>=3.3.0
 bcrypt>=4.0.0
 pydantic>=2.0.0
 email-validator>=2.0.0
+certifi>=2024.0.0
+
+# Sandbox (for custom strategy execution)
+RestrictedPython>=7.0
 
 # Utilities & Services
 APScheduler>=3.10.0

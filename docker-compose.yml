@@ -1,6 +1,42 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kline-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kline_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kline_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-kline_db}
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kline_user} -d ${POSTGRES_DB:-kline_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - kline-network
+
   backend:
     build:
       context: .
@@ -12,16 +48,38 @@ services:
       - ./logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      # Optional: Mount custom strategies if needed
-      # - ./backend/app/custom_strategies:/app/backend/app/custom_strategies
     environment:
       - SECRET_KEY=${SECRET_KEY}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-      - DB_PATH=/app/data/database/kline.db
-      - TZ=Asia/Shanghai  # 显式设置时区
-      # Add other env vars here
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      - DATABASE_TYPE=${DATABASE_TYPE:-postgresql}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kline_user}:${POSTGRES_PASSWORD:-kline_pass}@postgres:5432/${POSTGRES_DB:-kline_db}
+      - TZ=Asia/Shanghai
     ports:
-      - "${BACKEND_PORT:-8000}:8000"  # Expose backend (HostPort:ContainerPort)
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    networks:
+      - kline-network
 
   frontend:
     build:
@@ -34,15 +92,37 @@ services:
     restart: unless-stopped
     environment:
       - NGINX_BASE_PATH=${VITE_BASE_PATH:-/}
-      - TZ=Asia/Shanghai  # 显式设置时区
+      - TZ=Asia/Shanghai
     ports:
-      - "${FRONTEND_PORT:-80}:80"  # Expose frontend (HostPort:ContainerPort)
+      - "${FRONTEND_PORT:-80}:80"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - kline-network
 
 volumes:
+  postgres_data:
   data:
   logs:
+
+networks:
+  kline-network:
+    driver: bridge

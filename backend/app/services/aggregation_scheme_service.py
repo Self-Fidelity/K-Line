@@ -1,15 +1,15 @@
 from typing import List, Dict, Any, Optional
 from backend.app.models.aggregation_scheme import AggregationSchemeCreate
-from src.data_storage.sqlite_storage import SQLiteStorage
+from backend.app.dependencies import get_storage
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 class AggregationSchemeService:
     """策略聚合方案服务"""
-    
+
     def __init__(self):
-        self.storage = SQLiteStorage()
+        self.storage = get_storage()
         
     def create_scheme(self, scheme: AggregationSchemeCreate) -> Optional[int]:
         """创建聚合方案"""

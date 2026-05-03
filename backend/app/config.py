@@ -16,12 +16,27 @@ class Settings:
     BASE_DIR: Path = Path(__file__).parent.parent.parent
     
     # 数据库配置
+    DATABASE_TYPE: str = os.getenv("DATABASE_TYPE", "postgresql")  # sqlite | postgresql
     DATABASE_PATH: Path = Path(os.getenv("DATABASE_PATH")) if os.getenv("DATABASE_PATH") else BASE_DIR / "data" / "database" / "kline.db"
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql://kline_user:kline_pass@localhost:5432/kline_db",
+    )
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "20"))
     
     # JWT配置
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24小时
+
+    # 启动时验证 SECRET_KEY
+    _DEFAULT_SECRET_KEY = "your-secret-key-change-in-production"
+    if not SECRET_KEY or SECRET_KEY == _DEFAULT_SECRET_KEY:
+        raise ValueError(
+            "SECRET_KEY 未设置或使用默认值！"
+            "请在 .env 文件或环境变量中设置 SECRET_KEY=<您的密钥>"
+        )
     
     # CORS配置
     CORS_ORIGINS: list[str] = [
@@ -55,6 +70,10 @@ class Settings:
     # 监控检查频率（分钟）
     MONITOR_CHECK_INTERVAL: int = int(os.getenv("MONITOR_CHECK_INTERVAL", "1"))
     
+    # 应用配置
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
     # 交易时间
     TRADING_HOURS_START: int = 9  # 9:30
     TRADING_HOURS_END: int = 15  # 15:00

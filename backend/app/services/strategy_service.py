@@ -13,10 +13,10 @@ sys.path.insert(0, str(src_dir))
 from src.strategy.manager import StrategyManager
 from src.strategy.statistics import StrategyStatistics
 from src.strategy.optimization import Optimizer
-from src.data_storage.sqlite_storage import SQLiteStorage
+from backend.app.dependencies import get_storage
 from src.utils.logger import get_logger
 from backend.app.services.custom_strategy_service import CustomStrategyService
-from backend.app.services.data_service import DataService # Added this line
+from backend.app.services.data_service import DataService
 import json
 
 logger = get_logger(__name__)
@@ -24,14 +24,14 @@ logger = get_logger(__name__)
 
 class StrategyService:
     """策略服务类"""
-    
+
     def __init__(self):
         """初始化策略服务"""
         self.strategy_manager = StrategyManager()
         self.statistics = StrategyStatistics()
         self.custom_strategy_service = CustomStrategyService()
-        self.storage = SQLiteStorage()
-        self.data_service = DataService() # Added this line
+        self.storage = get_storage()
+        self.data_service = DataService()
     
     def list_strategies(self, user_id: Optional[int] = None) -> List[Dict]:
         """
