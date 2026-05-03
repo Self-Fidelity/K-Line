@@ -58,6 +58,12 @@ class MAStrategy(BaseStrategy):
         self.short_period = short_period
         self.long_period = long_period
     
+    def get_param_bounds(self) -> dict:
+        return {
+            "short_period": (2, 20, int),
+            "long_period": (20, 100, int),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,

@@ -57,6 +57,12 @@ class BollingerStrategy(BaseStrategy):
         self.period = period
         self.std_dev = std_dev
     
+    def get_param_bounds(self) -> dict:
+        return {
+            "period": (10, 50, int),
+            "std_dev": (0.5, 3.5, float),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,

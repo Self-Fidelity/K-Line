@@ -54,6 +54,11 @@ class MomentumStrategy(BaseStrategy):
         )
         self.period = period
     
+    def get_param_bounds(self) -> dict:
+        return {
+            "period": (5, 30, int),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,

@@ -56,6 +56,13 @@ class KDJStrategy(BaseStrategy):
         self.k_period = k_period
         self.d_period = d_period
 
+    def get_param_bounds(self) -> dict:
+        return {
+            "period": (5, 21, int),
+            "k_period": (2, 8, int),
+            "d_period": (2, 8, int),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,

@@ -96,3 +96,13 @@ class BaseStrategy(ABC):
             "parameters": parameters,
             "required_columns": self.get_required_columns(),
         }
+
+    def get_param_bounds(self) -> Dict[str, tuple]:
+        """
+        获取可优化参数的范围（用于自动优化）
+        
+        Returns:
+            字典 {param_name: (min, max, type)}
+            返回空字典表示该策略无可优化参数（如纯形态识别策略）
+        """
+        return {}

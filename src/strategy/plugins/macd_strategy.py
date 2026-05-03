@@ -67,6 +67,13 @@ class MACDStrategy(BaseStrategy):
         """计算指数移动平均"""
         return prices.ewm(span=period, adjust=False).mean()
     
+    def get_param_bounds(self) -> dict:
+        return {
+            "fast_period": (8, 17, int),
+            "slow_period": (20, 35, int),
+            "signal_period": (5, 15, int),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,

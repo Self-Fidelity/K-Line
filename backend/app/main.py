@@ -105,7 +105,8 @@ from backend.app.api import (
     param_sets,
     aggregation_schemes,
     users,
-    logs
+    logs,
+    daily_task,
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -124,6 +125,22 @@ app.include_router(strategy_aggregation.router, prefix="/api/strategy-aggregatio
 app.include_router(param_sets.router, prefix="/api/strategy", tags=["参数集管理"])
 app.include_router(aggregation_schemes.router, prefix="/api/strategy/aggregation-schemes", tags=["聚合策略方案"])
 app.include_router(logs.router, prefix="/api/logs", tags=["系统日志"])
+app.include_router(daily_task.router, prefix="/api/admin", tags=["每日任务"])
+
+
+@app.on_event("startup")
+async def startup_daily_task():
+    """启动每日自动优化任务"""
+    from backend.app.services.daily_task_service import daily_task_service
+    daily_task_service.start()
+    logger.info("每日任务调度器已启动")
+
+
+@app.on_event("shutdown")
+async def shutdown_daily_task():
+    """停止每日自动优化任务"""
+    from backend.app.services.daily_task_service import daily_task_service
+    daily_task_service.stop()
 
 
 

@@ -53,6 +53,12 @@ class TurtleStrategy(BaseStrategy):
         self.entry_period = entry_period
         self.exit_period = exit_period
 
+    def get_param_bounds(self) -> dict:
+        return {
+            "entry_period": (10, 50, int),
+            "exit_period": (5, 25, int),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,

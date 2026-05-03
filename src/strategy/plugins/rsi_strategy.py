@@ -83,6 +83,13 @@ class RSIStrategy(BaseStrategy):
         rsi = 100 - (100 / (1 + rs))
         return rsi.fillna(50)  # 初始值填充为50（中性）
     
+    def get_param_bounds(self) -> dict:
+        return {
+            "period": (7, 28, int),
+            "oversold": (15, 40, float),
+            "overbought": (60, 85, float),
+        }
+
     def analyze(
         self,
         data: pd.DataFrame,
