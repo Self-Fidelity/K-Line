@@ -78,25 +78,64 @@ const activeMenu = computed(() => route.path)
     justify-content: center;
     border-bottom: 1px solid v.$border-color;
     transition: border-color 0.3s;
-    
+
     h2 {
-      color: v.$text-primary;
-      margin: 0;
       font-size: 18px;
+      font-weight: 700;
       white-space: nowrap;
-      transition: color 0.3s;
+      background: linear-gradient(135deg, #409eff, #67c23a);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+  }
+}
+
+// ── 菜单项目增强 ──
+:deep(.el-menu) {
+  border-right: none;
+  background: transparent;
+
+  // 选中项——左侧发光条 + 渐变背景
+  .el-menu-item.is-active {
+    position: relative;
+    background: linear-gradient(90deg, rgba(64,158,255,0.12), transparent) !important;
+    color: var(--el-color-primary) !important;
+    font-weight: 600;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      background: var(--el-color-primary);
+      border-radius: 0 3px 3px 0;
     }
   }
 
-  .el-menu-vertical {
-    border-right: none;
-    flex: 1;
-    overflow-y: auto;
-    background-color: transparent; // Let parent handle bg
-    
-    &:not(.el-menu--collapse) {
-      width: 240px;
-    }
+  // 悬停效果
+  .el-menu-item:hover {
+    background: rgba(64,158,255,0.06) !important;
+  }
+
+  // 子菜单标题
+  .el-sub-menu__title:hover {
+    background: rgba(64,158,255,0.04) !important;
+  }
+
+  // 子菜单展开箭头动画
+  .el-sub-menu__icon-arrow {
+    transition: transform 0.3s ease;
+  }
+  .el-sub-menu.is-opened .el-sub-menu__icon-arrow {
+    transform: rotate(180deg);
+  }
+
+  // 子菜单内边距
+  .el-menu--inline .el-menu-item {
+    padding-left: 56px !important;
   }
 }
 </style>

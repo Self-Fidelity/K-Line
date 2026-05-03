@@ -78,4 +78,45 @@ html, body {
 // Text Utilities
 .text-up { color: v.$color-up; }
 .text-down { color: v.$color-down; }
+
+// ───────────────────── 响应式断点 ─────────────────────
+// ≥1024px: 桌面全功能
+// 768-1023px: 平板 — 侧边栏折叠，表格横向滚动
+// <768px: 手机 — 隐藏侧边栏，卡片堆叠单列
+
+@mixin tablet {
+  @media (max-width: 1023px) { @content; }
+}
+@mixin mobile {
+  @media (max-width: 767px) { @content; }
+}
+
+// 全局响应式
+@include tablet {
+  .el-aside {
+    position: absolute;
+    z-index: 1000;
+    height: 100vh;
+  }
+  .el-main {
+    padding: 12px !important;
+  }
+  .el-header {
+    padding: 0 12px !important;
+  }
+}
+
+@include mobile {
+  .el-aside {
+    width: 0 !important;
+    &.is-expanded { width: 240px !important; }
+  }
+  .el-main {
+    padding: 8px !important;
+  }
+  // 表格横向滚动
+  .el-table {
+    font-size: 13px;
+  }
+}
 .text-muted { color: v.$text-secondary; }

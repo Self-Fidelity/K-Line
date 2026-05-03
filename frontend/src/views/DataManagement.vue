@@ -44,10 +44,17 @@
         </el-col>
       </el-row>
 
-      <!-- 股票列表表格 -->
+      <!-- 骨架屏加载态 -->
+      <div v-if="loading" class="skeleton-table" style="margin-top:20px">
+        <div v-for="i in 8" :key="i" class="skeleton-row">
+          <el-skeleton :rows="1" animated :throttle="500" />
+        </div>
+      </div>
+
+      <!-- 股票列表 -->
       <el-table
+        v-if="!loading"
         :data="filteredStocks"
-        v-loading="loading"
         stripe
         style="width: 100%; margin-top: 20px"
         :default-sort="{ prop: 'code', order: 'ascending' }"
@@ -330,9 +337,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.data-management {
-  padding: 0;
-}
+.data-management { padding: 0; }
 
 .card-header {
   display: flex;
@@ -340,13 +345,31 @@ onMounted(() => {
   align-items: center;
   font-weight: 500;
   font-size: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .search-row {
   margin-bottom: 20px;
+  .el-select { width: 100%; }
 }
 
-.data-form {
-  margin-bottom: 20px;
+.data-form { margin-bottom: 20px; }
+
+/* 骨架屏 */
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 响应式表格 */
+@media (max-width: 768px) {
+  :deep(.el-table) {
+    font-size: 12px;
+  }
+  .card-header {
+    font-size: 14px;
+  }
 }
 </style>
