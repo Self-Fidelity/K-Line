@@ -1190,10 +1190,10 @@ class SQLiteStorage(DataStorage):
             return None
 
     def save_stock_list(self, df: pd.DataFrame) -> None:
-        """保存股票列表到数据库"""
+        """保存股票列表到数据库（带事务保护）"""
+        from datetime import datetime
+        conn = self._get_connection()
         try:
-            from datetime import datetime
-            conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM stock_list")
             update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1203,10 +1203,13 @@ class SQLiteStorage(DataStorage):
                     (row["code"], row["name"], row["market"], update_time),
                 )
             conn.commit()
-            conn.close()
             logger.debug(f"股票列表已保存到数据库，共 {len(df)} 只股票")
         except Exception as e:
+            conn.rollback()
             logger.error(f"保存股票列表到数据库失败: {e}", exc_info=True)
+            raise
+        finally:
+            conn.close()
 
     # ───────────────────── 审计日志 ─────────────────────
 

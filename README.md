@@ -161,7 +161,15 @@ cp frontend/.env.example frontend/.env
 
 **注意**：`scripts/setup.py` 仍可用于初始化目录结构，但数据库表已由存储层自动维护。
 
-### 4. Docker 部署时数据分裂问题（已修复）
+### 4. 股票列表突然变少或只剩一只
+
+**现象**：数据管理页面原本显示 5000+ 只股票，突然只剩几只甚至一只。
+
+**原因**：`stock_list` 表采用"先清空再全量插入"的更新策略。如果在开发/测试过程中手动调用了 `save_stock_list()` 并传入了不完整的 DataFrame，会导致表被意外清空。
+
+**修复**：通过前端"刷新股票列表"按钮（管理员）或调用 `StockListManager.get_stock_list(force_from_api=True)` 重新从 akshare 全量拉取即可恢复。
+
+### 5. Docker 部署时数据分裂问题（已修复）
 
 **现象**（旧版本）：PostgreSQL 模式下，市场数据写入 Postgres，但用户/审计日志/自选股/股票列表等业务数据偷偷写入容器内的 SQLite 临时文件，导致容器重启后业务数据丢失。
 

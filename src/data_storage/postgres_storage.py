@@ -947,10 +947,11 @@ class PostgresStorage(DataStorage):
             return None
 
     def save_stock_list(self, df: pd.DataFrame) -> None:
-        """保存股票列表到数据库"""
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with self._get_connection() as conn:
+        """保存股票列表到数据库（带事务保护）"""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._get_connection() as conn:
+            trans = conn.begin()
+            try:
                 conn.execute(text("DELETE FROM stock_list"))
                 for _, row in df.iterrows():
                     conn.execute(
@@ -961,10 +962,12 @@ class PostgresStorage(DataStorage):
                         {"code": row["code"], "name": row["name"],
                          "market": row["market"], "ut": now},
                     )
-                conn.commit()
+                trans.commit()
                 logger.debug(f"股票列表已保存到数据库，共 {len(df)} 只股票")
-        except Exception as e:
-            logger.error(f"保存股票列表到数据库失败: {e}", exc_info=True)
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"保存股票列表到数据库失败: {e}", exc_info=True)
+                raise
 
     # ───────────────────── 数据更新配置 ─────────────────────
 

@@ -356,3 +356,4 @@ API Router → Pydantic Models → Service → src/ Engine → Storage/DataFetch
 - **Bokeh 图表与 Lightweight Charts**：Bokeh 用于后端生成可下载的 HTML 图表；Lightweight Charts 用于前端交互式图表。两者独立，不要混用。
 - **静态文件挂载顺序**：`main.py` 中 `/static` 和 `/charts` 的 `StaticFiles` 挂载在路由注册之后。`sys.path.insert(0, str(src_dir))` 用于运行时让 `src_settings` 可被导入，不要删除。
 - **用户策略自动发现**：`StrategyManager` 使用文件系统扫描加载策略。新增/修改 `src/strategy/plugins/` 下的文件后，**重启后端进程**才能生效（没有热重载）。
+- **`save_stock_list` 事务安全**：`SQLiteStorage` 和 `PostgresStorage` 的 `save_stock_list()` 采用"先清空表再全量插入"策略，且已添加事务保护（异常时 rollback）。但在开发测试时，**切勿传入不完整的 DataFrame** 进行测试，否则会导致生产环境中的股票列表表被意外清空。测试应使用独立临时数据库。
