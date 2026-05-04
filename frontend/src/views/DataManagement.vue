@@ -139,7 +139,7 @@ const fetching = ref(false)
 
 const stocks = ref<StockInfo[]>([])
 const searchKeyword = ref('')
-const selectedMarket = ref('main')
+const selectedMarket = ref('all')
 const currentPage = ref(1)
 const pageSize = ref(50)
 
