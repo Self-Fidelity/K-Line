@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/Vue-3.0+-brightgreen.svg" alt="Vue">
   <img src="https://img.shields.io/badge/FastAPI-Latest-009688.svg" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Version-1.1.2-orange.svg" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
 
@@ -213,6 +214,38 @@ curl -f http://localhost:8000/health
 docker exec kline-postgres psql -U kline_user -d kline_db -c "\dt"
 ```
 
+### 6. Docker 部署时后端容器不断重启（已修复）
+
+**现象**：`docker-compose up` 后 backend 容器状态为 `unhealthy`，反复重启，日志显示 `curl: (22) The requested URL returned error: 404`。
+
+**原因**：`docker-compose.yml` 和 `deploy/backend.Dockerfile` 的 healthcheck 使用了 `http://localhost:8000/docs`。但生产环境 `DEBUG=false` 时，FastAPI 的 `/docs` 端点被禁用，导致 healthcheck 持续失败，Docker 判定容器不健康并不断重启。
+
+**修复状态**：healthcheck 已统一改为 `/health` 端点（该端点不受 `DEBUG` 影响，始终可用）。同时 Nginx 模板也添加了 `/health` 代理，外部可直接访问。
+
+### 7. PostgreSQL 模式下用户认证失败（已修复）
+
+**现象**：切换到 `DATABASE_TYPE=postgresql` 后，登录报 500 错误，日志显示 `KeyError: 'hashed_password'`；或管理员修改用户密码时报 `column "hashed_password" does not exist`。
+
+**原因**：`PostgresStorage` 中 `users` 表的密码列名为 `password_hash`，而 `SQLiteStorage` 和后端 API（`auth.py`、`users.py`）统一使用 `hashed_password`。
+
+**修复状态**：`PostgresStorage` 中 `users` 表列名已统一为 `hashed_password`，与 `SQLiteStorage` 及后端 API 保持一致。
+
+### 8. PostgreSQL 模式下策略聚合和默认参数集操作失败（已修复）
+
+**现象**：PostgreSQL 模式下，保存策略聚合方案报 `TypeError`（参数不匹配）；设置默认参数集报 `AttributeError: 'PostgresStorage' object has no attribute 'set_default_param_set'`。
+
+**原因**：`PostgresStorage` 的 `aggregation_schemes` 表结构/方法与 `SQLiteStorage` 不兼容（缺少 `stock_code`、`required_strategies` 列，存在废弃的 `weights` 列）；且缺失 `set_default_param_set` 和 `get_default_param_set` 方法。
+
+**修复状态**：`PostgresStorage` 的 `aggregation_schemes` 表结构和方法签名已完全对齐 `SQLiteStorage`；缺失的两个参数集方法已补全。
+
+### 9. `.env.example` SECRET_KEY 无法触发安全检查（已修复）
+
+**现象**：直接复制 `.env.example` 为 `.env` 后启动，系统没有提示修改 SECRET_KEY，使用了弱密钥运行。
+
+**原因**：`.env.example` 中的默认值 `your-secret-key-change-this-in-production` 与 `backend/app/config.py` 中检查的 `_DEFAULT_SECRET_KEY = "your-secret-key-change-in-production"` 不匹配，导致安全检查失效。
+
+**修复状态**：`.env.example` 中的默认值已调整为与代码中的检查值完全一致。现在直接复制 `.env.example` 而不修改 SECRET_KEY，后端启动会明确抛出 `ValueError` 并提示修改。
+
 ---
 
 ## 📂 项目结构
@@ -281,6 +314,12 @@ K-Line/
 ## 📄 许可证
 
 本项目采用 [MIT](LICENSE) 许可证。
+
+---
+
+## 📝 更新日志
+
+详见 [CHANGELOG.md](CHANGELOG.md)
 
 ---
 

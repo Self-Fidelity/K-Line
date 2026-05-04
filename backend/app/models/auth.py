@@ -35,7 +35,7 @@ class UserResponse(BaseModel):
     """用户响应模型"""
     id: int
     username: str
-    email: str
+    email: Optional[str] = None
     role: str
     max_watchlist_count: int
     is_active: bool

@@ -10,7 +10,7 @@ sys.path.insert(0, str(project_root))
 
 from src.config import settings
 from src.data_fetcher import StockListManager, StockDataFetcher
-from src.data_storage import SQLiteStorage
+from src.data_storage import get_storage_instance
 from src.utils.logger import setup_logger
 from src.utils.date_utils import format_date
 
@@ -34,7 +34,7 @@ def fetch_all_stocks(
     
     # 初始化
     settings.init_directories()
-    storage = SQLiteStorage()
+    storage = get_storage_instance()
     stock_manager = StockListManager()
     fetcher = StockDataFetcher()
     
@@ -104,7 +104,7 @@ def fetch_single_stock(stock_code: str, start_date: str = "", end_date: str = ""
     logger.info(f"开始获取股票 {stock_code} 的数据...")
     
     settings.init_directories()
-    storage = SQLiteStorage()
+    storage = get_storage_instance()
     fetcher = StockDataFetcher()
     
     data_source = fetcher._get_provider().name

@@ -353,7 +353,7 @@ API Router → Pydantic Models → Service → src/ Engine → Storage/DataFetch
 
 - Docker Compose 中所有服务时区为 `Asia/Shanghai`。
 - 日志使用 `json-file` driver 并设置大小轮转。
-- 后端健康检查：`curl -f http://localhost:8000/docs`。
+- 后端健康检查：`curl -f http://localhost:8000/health`。
 - 前端健康检查：`wget --spider http://localhost:80/`。
 
 ---
@@ -395,8 +395,12 @@ StockDataFetcher.batch_fetch()
 
 - **`src/` 不是遗留代码**：它是活跃维护的核心引擎。修改策略、存储或数据获取逻辑时，优先考虑在 `src/` 中修改，而非在 `backend/` 中写重复逻辑。
 - **数据库兼容性陷阱（已修复）**：~~部分模块曾硬编码使用 `sqlite3` 连接~~。经过两次重构（`da18cfe`、`de41a60`），所有 backend API、service、data_fetcher 均已通过 `DataStorage` 抽象层访问数据库。新增持久化功能时，只需在 `DataStorage` 基类中定义抽象方法，并在 `SQLiteStorage` 和 `PostgresStorage` 中分别实现即可。
+- **`scripts/setup.py` 必须适配双存储后端**：`setup.py` 负责初始化数据库和目录，**不能硬编码 `SQLiteStorage()`**。已改为根据 `DATABASE_TYPE` 环境变量自动选择 `PostgresStorage` 或 `SQLiteStorage`。新增持久化功能时，`DataStorage` 基类未定义的方法（如 `save_aggregation_scheme`、`set_default_param_set`）必须在 `SQLiteStorage` 和 `PostgresStorage` 中同步实现，保持签名和返回值完全一致。
 - **前端端口**：`vite.config.ts` 中 dev server 端口为 5173，但 `start.bat` 里打开浏览器用的是 5174（笔误），本地开发以实际 `npm run dev` 输出端口为准。
 - **Bokeh 图表与 Lightweight Charts**：Bokeh 用于后端生成可下载的 HTML 图表；Lightweight Charts 用于前端交互式图表。两者独立，不要混用。
 - **静态文件挂载顺序**：`main.py` 中 `/static` 和 `/charts` 的 `StaticFiles` 挂载在路由注册之后。`sys.path.insert(0, str(src_dir))` 用于运行时让 `src_settings` 可被导入，不要删除。
 - **用户策略自动发现**：`StrategyManager` 使用文件系统扫描加载策略。新增/修改 `src/strategy/plugins/` 下的文件后，**重启后端进程**才能生效（没有热重载）。
+- **PostgreSQL 与 SQLite 接口一致性陷阱**：`PostgresStorage` 和 `SQLiteStorage` 必须保持公开方法签名完全一致。历史问题包括：`users` 表密码列名不一致（`password_hash` vs `hashed_password`）、`aggregation_schemes` 表结构差异（`weights` vs `required_strategies`+`stock_code`）、缺失 `set_default_param_set`/`get_default_param_set` 方法。修改任一存储实现时，必须同步修改另一实现，否则会导致 `DATABASE_TYPE=postgresql` 时 API 报 `AttributeError` 或 `KeyError`。
 - **`save_stock_list` 事务安全**：`SQLiteStorage` 和 `PostgresStorage` 的 `save_stock_list()` 采用"先清空表再全量插入"策略，且已添加事务保护（异常时 rollback）。但在开发测试时，**切勿传入不完整的 DataFrame** 进行测试，否则会导致生产环境中的股票列表表被意外清空。测试应使用独立临时数据库。
+- **`.env.example` SECRET_KEY 默认值**：`.env.example` 中的 `SECRET_KEY` 默认值已调整为与 `backend/app/config.py` 中的 `_DEFAULT_SECRET_KEY` 完全一致。用户复制 `.env.example` 后若不修改，后端启动会明确抛出 `ValueError`，防止弱密钥进入生产环境。
+- **Nginx 健康检查代理**：`deploy/nginx.conf.template` 已添加 `/health` location，外部可通过 `http://your-server-ip/health` 直接检查后端状态（无需经过 `/api` 前缀）。

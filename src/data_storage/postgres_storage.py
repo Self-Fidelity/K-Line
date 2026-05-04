@@ -151,12 +151,13 @@ class PostgresStorage(DataStorage):
             "aggregation_schemes",
             metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("name", String(200), nullable=False, unique=True),
+            Column("name", String(200), nullable=False),
             Column("description", String, default=""),
+            Column("stock_code", String(20)),
             Column("strategies", String, nullable=False),
-            Column("weights", String, nullable=False),
-            Column("buy_threshold", Float, default=0.5),
-            Column("sell_threshold", Float, default=-0.5),
+            Column("buy_threshold", Float, nullable=False),
+            Column("sell_threshold", Float, nullable=False),
+            Column("required_strategies", String, nullable=False),
             Column("created_at", String(20), nullable=False),
             Column("updated_at", String(20)),
         )
@@ -167,7 +168,7 @@ class PostgresStorage(DataStorage):
             metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("username", String(50), nullable=False, unique=True),
-            Column("password_hash", String(255), nullable=False),
+            Column("hashed_password", String(255), nullable=False),
             Column("email", String(255)),
             Column("role", String(20), default="user"),
             Column("max_watchlist_count", Integer, default=20),
@@ -597,16 +598,58 @@ class PostgresStorage(DataStorage):
         logger.info(f"删除参数集成功: {param_set_id}")
         return True
 
+    def set_default_param_set(
+        self, param_set_id: int, stock_code: str, strategy_name: str
+    ) -> bool:
+        """设置默认参数集"""
+        with self._get_connection() as conn:
+            conn.execute(
+                text(
+                    "UPDATE strategy_param_sets SET is_default = 0 "
+                    "WHERE stock_code = :code AND strategy_name = :name"
+                ),
+                {"code": stock_code, "name": strategy_name},
+            )
+            conn.execute(
+                text("UPDATE strategy_param_sets SET is_default = 1 WHERE id = :id"),
+                {"id": param_set_id},
+            )
+            conn.commit()
+        logger.info(f"设置默认参数集成功: {param_set_id}")
+        return True
+
+    def get_default_param_set(
+        self, stock_code: str, strategy_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """获取默认参数集"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT * FROM strategy_param_sets "
+                    "WHERE stock_code = :code AND strategy_name = :name AND is_default = 1 "
+                    "LIMIT 1"
+                ),
+                {"code": stock_code, "name": strategy_name},
+            ).fetchone()
+            if row:
+                row_dict = dict(row._mapping)
+                row_dict["params"] = json.loads(row_dict["params"])
+                if row_dict.get("param_ranges"):
+                    row_dict["param_ranges"] = json.loads(row_dict["param_ranges"])
+                return row_dict
+            return None
+
     # ───────────────────── 聚合方案操作 ─────────────────────
 
     def save_aggregation_scheme(
         self,
         name: str,
-        strategies: str,
-        weights: str,
+        strategies: List[Dict[str, Any]],
+        buy_threshold: float,
+        sell_threshold: float,
+        required_strategies: List[str],
         description: str = "",
-        buy_threshold: float = 0.5,
-        sell_threshold: float = -0.5,
+        stock_code: Optional[str] = None,
     ) -> Optional[int]:
         """保存聚合方案"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -614,26 +657,20 @@ class PostgresStorage(DataStorage):
             result = conn.execute(
                 text("""
                     INSERT INTO aggregation_schemes
-                        (name, description, strategies, weights, buy_threshold,
-                         sell_threshold, created_at, updated_at)
-                    VALUES (:name, :description, :strategies, :weights, :buy_threshold,
-                            :sell_threshold, :created_at, :updated_at)
-                    ON CONFLICT (name) DO UPDATE SET
-                        description = EXCLUDED.description,
-                        strategies = EXCLUDED.strategies,
-                        weights = EXCLUDED.weights,
-                        buy_threshold = EXCLUDED.buy_threshold,
-                        sell_threshold = EXCLUDED.sell_threshold,
-                        updated_at = EXCLUDED.updated_at
+                        (name, description, stock_code, strategies, buy_threshold,
+                         sell_threshold, required_strategies, created_at, updated_at)
+                    VALUES (:name, :description, :stock_code, :strategies, :buy_threshold,
+                            :sell_threshold, :required_strategies, :created_at, :updated_at)
                     RETURNING id
                 """),
                 {
                     "name": name,
                     "description": description,
-                    "strategies": strategies,
-                    "weights": weights,
+                    "stock_code": stock_code,
+                    "strategies": json.dumps(strategies, ensure_ascii=False),
                     "buy_threshold": buy_threshold,
                     "sell_threshold": sell_threshold,
+                    "required_strategies": json.dumps(required_strategies, ensure_ascii=False),
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -641,13 +678,23 @@ class PostgresStorage(DataStorage):
             conn.commit()
             return result.fetchone()[0]
 
-    def get_aggregation_schemes(self) -> List[Dict[str, Any]]:
-        """获取所有聚合方案"""
+    def get_aggregation_schemes(self, stock_code: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取聚合方案列表"""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                text("SELECT * FROM aggregation_schemes ORDER BY created_at DESC")
-            ).fetchall()
-            return [dict(row._mapping) for row in rows]
+            query = "SELECT * FROM aggregation_schemes"
+            params = {}
+            if stock_code:
+                query += " WHERE stock_code = :stock_code OR stock_code IS NULL"
+                params["stock_code"] = stock_code
+            query += " ORDER BY created_at DESC"
+            rows = conn.execute(text(query), params).fetchall()
+            results = []
+            for row in rows:
+                result = dict(row._mapping)
+                result["strategies"] = json.loads(result["strategies"])
+                result["required_strategies"] = json.loads(result["required_strategies"])
+                results.append(result)
+            return results
 
     def get_aggregation_scheme_by_id(self, scheme_id: int) -> Optional[Dict[str, Any]]:
         """根据ID获取聚合方案"""
@@ -656,7 +703,12 @@ class PostgresStorage(DataStorage):
                 text("SELECT * FROM aggregation_schemes WHERE id = :id"),
                 {"id": scheme_id},
             ).fetchone()
-            return dict(row._mapping) if row else None
+            if row:
+                result = dict(row._mapping)
+                result["strategies"] = json.loads(result["strategies"])
+                result["required_strategies"] = json.loads(result["required_strategies"])
+                return result
+            return None
 
     def delete_aggregation_scheme(self, scheme_id: int) -> bool:
         """删除聚合方案"""
@@ -824,7 +876,7 @@ class PostgresStorage(DataStorage):
         with self._get_connection() as conn:
             result = conn.execute(
                 text("""
-                    INSERT INTO users (username, password_hash, email, role,
+                    INSERT INTO users (username, hashed_password, email, role,
                                        max_watchlist_count, is_active, created_at)
                     VALUES (:un, :ph, :email, :role, :mwc, :ia, :now)
                     RETURNING id
