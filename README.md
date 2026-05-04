@@ -155,46 +155,30 @@ cp frontend/.env.example frontend/.env
 # VITE_BASE_PATH=/
 ```
 
-### 3. 登录报错 500：no such table: users
+### 3. 数据库表自动初始化（已修复）
 
-**现象**：点击登录后后端 500，日志显示 `sqlite3.OperationalError: no such table: users`。
+**现状**：`SQLiteStorage` 在首次连接时会自动创建所有业务表（`users`、`audit_logs`、`watchlist`、`stock_list`、`data_update_config` 等），无需手动执行 `init_db.py`。
 
-**原因**：`scripts/setup.py` 仅初始化目录和部分表，**未创建 `users` 表**。此外，`sqlite_storage.py` 与 `auth.py` 的字段名不一致（`password_hash` vs `hashed_password`），且缺少 `max_watchlist_count` 字段。
+**注意**：`scripts/setup.py` 仍可用于初始化目录结构，但数据库表已由存储层自动维护。
 
-**修复**：弃用 `scripts/setup.py`，改用更完整的初始化脚本：
+### 4. Docker 部署时数据分裂问题（已修复）
+
+**现象**（旧版本）：PostgreSQL 模式下，市场数据写入 Postgres，但用户/审计日志/自选股/股票列表等业务数据偷偷写入容器内的 SQLite 临时文件，导致容器重启后业务数据丢失。
+
+**原因**（旧版本）：backend 的 `auth.py`、`users.py`、`watchlist.py` 以及 `data_fetcher/stock_list.py` 曾直接调用 `sqlite3.connect()`，绕过 `DataStorage` 抽象层。
+
+**修复状态**：经过两次重构（`da18cfe`、`de41a60`），所有模块均已通过 `get_storage()` 工厂访问数据库。当 `DATABASE_TYPE=postgresql` 时，**所有数据（市场数据 + 业务数据 + 股票列表 + 配置）统一进入 PostgreSQL**，容器重启不会丢失任何数据。
+
+**部署验证命令**：
 ```bash
-# SQLite 环境
-export DATABASE_TYPE=sqlite   # Windows: $env:DATABASE_TYPE="sqlite"
-python backend/scripts/init_db.py
-
-# 创建默认管理员（用户名 admin / 密码 admin123）
-python -c "
-import sqlite3
-from backend.app.utils.security import get_password_hash
-from datetime import datetime, timezone
-conn = sqlite3.connect('data/database/kline.db')
-cursor = conn.cursor()
-hashed = get_password_hash('admin123')
-cursor.execute(
-    'INSERT OR IGNORE INTO users (username, email, hashed_password, role, max_watchlist_count, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    ('admin', 'admin@example.com', hashed, 'admin', 20, 1, datetime.now(timezone.utc).isoformat())
-)
-conn.commit()
-conn.close()
-"
+# 1. 确保 .env 中 DATABASE_TYPE=postgresql
+# 2. 启动服务
+docker-compose up -d --build
+# 3. 验证后端健康检查
+curl -f http://localhost:8000/health
+# 4. 验证表是否创建在 PostgreSQL 中
+docker exec kline-postgres psql -U kline_user -d kline_db -c "\dt"
 ```
-
-### 4. 自选股/股票列表返回 500
-
-**现象**：登录后 Dashboard 和数据中心页面报 500，涉及 `/api/watchlist` 和 `/api/data/stocks`。
-
-**原因**：
-- `watchlist` 表未在初始化时创建（仅懒加载在 `list_custom_strategies()` 中）。
-- `data_service.py` 对无数据股票填充 `np.nan`，`data.py` 使用 `df.iterrows()` 遍历时 pandas 将 `None` 转为 `float(nan)`，导致 Pydantic `Optional[str]` 校验失败。
-
-**修复**：
-- 使用 `backend/scripts/init_db.py` 重建数据库（已包含 `watchlist` 表）。
-- 修改 `backend/app/api/data.py`，在构造 `StockInfo` 前用 `pd.isna()` 检测并显式转为 Python `None`。
 
 ---
 

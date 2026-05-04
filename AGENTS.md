@@ -227,10 +227,10 @@ API Router → Pydantic Models → Service → src/ Engine → Storage/DataFetch
 
 - `src/data_fetcher/`：所有 akshare 调用集中于此，含重试逻辑与批量处理。
 - `src/data_storage/`：
-  - `DataStorage` 是抽象基类。
+  - `DataStorage` 是抽象基类，定义市场数据（K线）与业务数据（用户、审计日志、自选股、股票列表、配置表）的统一接口。
   - `SQLiteStorage`：单文件，开发便利。
   - `PostgresStorage`：使用 SQLAlchemy 连接池，生产环境。
-  - 注意：**auth、audit logs、watchlist、data_update_config 等部分模块仍直接使用 `sqlite3` 原生连接**，在 PostgreSQL 模式下可能不兼容。修改时需检查数据库兼容性。
+  - **所有业务数据（auth、audit logs、watchlist、stock_list、data_update_config）均已通过 `DataStorage` 统一**。backend 与 data_fetcher 不再直接调用 `sqlite3.connect()`。
 - `src/strategy/`：
   - `BaseStrategy`：所有策略必须继承。必须实现 `analyze(data: pd.DataFrame, **kwargs) -> pd.DataFrame`。
   - 输出 DataFrame **必须包含** `date`, `signal`（1=买入, -1=卖出, 0=持有）, `signal_type`（"买入"/"卖出"/"持有"）。
@@ -351,7 +351,7 @@ API Router → Pydantic Models → Service → src/ Engine → Storage/DataFetch
 ## 常见陷阱与注意事项
 
 - **`src/` 不是遗留代码**：它是活跃维护的核心引擎。修改策略、存储或数据获取逻辑时，优先考虑在 `src/` 中修改，而非在 `backend/` 中写重复逻辑。
-- **数据库兼容性陷阱**：部分模块（auth、audit log、watchlist、data_update_config）仍硬编码使用 `sqlite3` 连接。如果要在 PostgreSQL 模式下新增持久化功能，应使用 `get_storage()` 工厂或 SQLAlchemy，避免直接 `sqlite3.connect()`。
+- **数据库兼容性陷阱（已修复）**：~~部分模块曾硬编码使用 `sqlite3` 连接~~。经过两次重构（`da18cfe`、`de41a60`），所有 backend API、service、data_fetcher 均已通过 `DataStorage` 抽象层访问数据库。新增持久化功能时，只需在 `DataStorage` 基类中定义抽象方法，并在 `SQLiteStorage` 和 `PostgresStorage` 中分别实现即可。
 - **前端端口**：`vite.config.ts` 中 dev server 端口为 5173，但 `start.bat` 里打开浏览器用的是 5174（笔误），本地开发以实际 `npm run dev` 输出端口为准。
 - **Bokeh 图表与 Lightweight Charts**：Bokeh 用于后端生成可下载的 HTML 图表；Lightweight Charts 用于前端交互式图表。两者独立，不要混用。
 - **静态文件挂载顺序**：`main.py` 中 `/static` 和 `/charts` 的 `StaticFiles` 挂载在路由注册之后。`sys.path.insert(0, str(src_dir))` 用于运行时让 `src_settings` 可被导入，不要删除。
