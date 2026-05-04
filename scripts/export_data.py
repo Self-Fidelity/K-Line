@@ -36,9 +36,10 @@ def export_stock_data(
     # 初始化
     settings.init_directories()
     storage = SQLiteStorage()
+    data_source = storage.get_update_config("data_source", "akshare")
     
     # 获取数据
-    df = storage.get_daily_data(stock_code, start_date, end_date)
+    df = storage.get_daily_data(stock_code, start_date, end_date, data_source=data_source)
     
     if df.empty:
         logger.warning(f"股票 {stock_code} 没有数据可导出")
@@ -72,6 +73,7 @@ def export_all_stocks(output_dir: str = ""):
     
     settings.init_directories()
     storage = SQLiteStorage()
+    data_source = storage.get_update_config("data_source", "akshare")
     exporter = DataExporter(output_dir=Path(output_dir) if output_dir else None)
     
     # 获取所有股票代码
@@ -83,7 +85,7 @@ def export_all_stocks(output_dir: str = ""):
     
     for stock_code in stock_codes:
         try:
-            df = storage.get_daily_data(stock_code)
+            df = storage.get_daily_data(stock_code, data_source=data_source)
             if not df.empty:
                 filename = f"{stock_code}_data.csv"
                 exporter.export_to_csv(df, filename)
@@ -120,9 +122,10 @@ def export_with_date_range(
     
     settings.init_directories()
     storage = SQLiteStorage()
+    data_source = storage.get_update_config("data_source", "akshare")
     
     # 获取数据
-    df = storage.get_daily_data(stock_code, start_date, end_date)
+    df = storage.get_daily_data(stock_code, start_date, end_date, data_source=data_source)
     
     if df.empty:
         logger.warning(f"股票 {stock_code} 在指定日期范围内没有数据")

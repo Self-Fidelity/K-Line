@@ -8,6 +8,9 @@ from backend.app.models.data_update import (
     DataUpdateConfigUpdate,
     ManualUpdateRequest,
     UpdateTaskStatus,
+    DataSourceConfig,
+    DataSourceConfigUpdate,
+    DataSourceTestResult,
 )
 from backend.app.services.data_update_service import DataUpdateService
 
@@ -132,6 +135,104 @@ async def manual_update(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"启动更新任务失败: {str(e)}",
+        )
+
+
+# ==================== 数据源配置 API ====================
+
+@router.get("/data-source", response_model=DataSourceConfig)
+async def get_data_source_config(
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+):
+    """获取数据源配置（所有用户可见，但 token 仅返回是否已配置）"""
+    try:
+        config = update_service.get_data_source_config()
+        # 前端展示时 token 只显示是否已配置，不返回真实值
+        return DataSourceConfig(
+            data_source=config["data_source"],
+            tushare_token="" if not config.get("tushare_token") else "***",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取数据源配置失败: {str(e)}",
+        )
+
+
+@router.put("/data-source", response_model=DataSourceConfig)
+async def update_data_source_config(
+    config_update: DataSourceConfigUpdate,
+    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+):
+    """更新数据源配置（仅管理员）"""
+    try:
+        update_dict = config_update.model_dump(exclude_unset=True)
+        update_service.update_data_source_config(update_dict)
+        new_config = update_service.get_data_source_config()
+        return DataSourceConfig(
+            data_source=new_config["data_source"],
+            tushare_token="" if not new_config.get("tushare_token") else "***",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新数据源配置失败: {str(e)}",
+        )
+
+
+@router.post("/data-source/test", response_model=DataSourceTestResult)
+async def test_data_source(
+    data_source: str,
+    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+):
+    """测试数据源连接（仅管理员）
+    
+    Args:
+        data_source: 数据源名称 'akshare' 或 'tushare'
+    """
+    if data_source not in ("akshare", "tushare"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="数据源必须是 akshare 或 tushare",
+        )
+    
+    try:
+        result = update_service.test_data_source(data_source)
+        return DataSourceTestResult(**result)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"测试数据源失败: {str(e)}",
+        )
+
+
+@router.post("/data-source/clear")
+async def clear_data_by_source(
+    data_source: str,
+    current_admin: Annotated[dict, Depends(get_current_admin_user)],
+):
+    """清空指定数据源的所有日K线数据（仅管理员）
+    
+    Args:
+        data_source: 数据源名称 'akshare' 或 'tushare'
+    """
+    if data_source not in ("akshare", "tushare"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="数据源必须是 akshare 或 tushare",
+        )
+    
+    try:
+        deleted = update_service.clear_data_by_source(data_source)
+        return {
+            "message": f"已清空 {data_source} 的 {deleted} 条日K线数据",
+            "data_source": data_source,
+            "deleted_count": deleted,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"清空数据失败: {str(e)}",
         )
 
 

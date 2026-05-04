@@ -47,10 +47,12 @@ def fetch_all_stocks(
     success_count = 0
     fail_count = 0
     
+    data_source = fetcher._get_provider().name
+    
     for i, stock_code in enumerate(stock_codes, 1):
         try:
             # 检查是否已有数据
-            latest_date = storage.get_latest_date(stock_code)
+            latest_date = storage.get_latest_date(stock_code, data_source=data_source)
             
             # 如果已有数据且未指定开始日期，则从最新日期之后开始获取
             fetch_start_date = start_date
@@ -72,7 +74,7 @@ def fetch_all_stocks(
             
             if not df.empty:
                 # 保存数据
-                storage.save_daily_data(df, stock_code)
+                storage.save_daily_data(df, stock_code, data_source=data_source)
                 success_count += 1
             else:
                 logger.warning(f"股票 {stock_code} 未获取到数据")
@@ -105,8 +107,10 @@ def fetch_single_stock(stock_code: str, start_date: str = "", end_date: str = ""
     storage = SQLiteStorage()
     fetcher = StockDataFetcher()
     
+    data_source = fetcher._get_provider().name
+    
     # 检查是否已有数据
-    latest_date = storage.get_latest_date(stock_code)
+    latest_date = storage.get_latest_date(stock_code, data_source=data_source)
     fetch_start_date = start_date
     if not fetch_start_date and latest_date:
         from src.utils.date_utils import parse_date, add_trading_days
@@ -124,7 +128,7 @@ def fetch_single_stock(stock_code: str, start_date: str = "", end_date: str = ""
     )
     
     if not df.empty:
-        storage.save_daily_data(df, stock_code)
+        storage.save_daily_data(df, stock_code, data_source=data_source)
         logger.info(f"股票 {stock_code} 数据获取完成，共 {len(df)} 条")
     else:
         logger.warning(f"股票 {stock_code} 未获取到数据")

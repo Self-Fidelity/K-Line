@@ -13,6 +13,7 @@ class DataStorage(ABC):
         self,
         data: pd.DataFrame,
         stock_code: str,
+        data_source: str = "akshare",
     ) -> bool:
         """
         保存日K线数据
@@ -20,6 +21,7 @@ class DataStorage(ABC):
         Args:
             data: 日K线数据 DataFrame
             stock_code: 股票代码
+            data_source: 数据来源，'akshare' 或 'tushare'
         
         Returns:
             是否保存成功
@@ -32,6 +34,7 @@ class DataStorage(ABC):
         stock_code: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        data_source: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         获取日K线数据
@@ -40,6 +43,7 @@ class DataStorage(ABC):
             stock_code: 股票代码
             start_date: 开始日期（格式：'20240101'）
             end_date: 结束日期（格式：'20240101'）
+            data_source: 数据来源过滤，None 则返回所有来源
         
         Returns:
             日K线数据 DataFrame
@@ -47,12 +51,13 @@ class DataStorage(ABC):
         pass
     
     @abstractmethod
-    def get_latest_date(self, stock_code: str) -> Optional[str]:
+    def get_latest_date(self, stock_code: str, data_source: Optional[str] = None) -> Optional[str]:
         """
         获取指定股票的最新数据日期
         
         Args:
             stock_code: 股票代码
+            data_source: 数据来源过滤，None 则查询所有来源
         
         Returns:
             最新日期字符串（格式：'20240101'），如果没有数据返回 None
@@ -64,6 +69,7 @@ class DataStorage(ABC):
         self,
         stock_code: str,
         trade_date: str,
+        data_source: str = "akshare",
     ) -> bool:
         """
         检查指定日期的数据是否存在
@@ -71,6 +77,7 @@ class DataStorage(ABC):
         Args:
             stock_code: 股票代码
             trade_date: 交易日期（格式：'20240101'）
+            data_source: 数据来源
         
         Returns:
             如果数据存在返回 True，否则返回 False
@@ -78,12 +85,28 @@ class DataStorage(ABC):
         pass
     
     @abstractmethod
-    def get_all_stocks(self) -> list[str]:
+    def get_all_stocks(self, data_source: Optional[str] = None) -> list[str]:
         """
         获取数据库中所有股票代码列表
         
+        Args:
+            data_source: 数据来源过滤，None 则返回所有来源
+        
         Returns:
             股票代码列表
+        """
+        pass
+    
+    @abstractmethod
+    def clear_data_by_source(self, data_source: str) -> int:
+        """
+        清空指定数据来源的所有日K线数据
+        
+        Args:
+            data_source: 数据来源，'akshare' 或 'tushare'
+        
+        Returns:
+            删除的行数
         """
         pass
 

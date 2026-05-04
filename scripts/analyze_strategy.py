@@ -47,6 +47,7 @@ def analyze_strategy(
     settings.init_directories()
     storage = SQLiteStorage()
     strategy_manager = StrategyManager()
+    data_source = storage.get_update_config("data_source", "akshare")
     
     # 检查策略是否存在
     available_strategies = strategy_manager.list_strategies()
@@ -69,7 +70,7 @@ def analyze_strategy(
     
     # 获取股票数据
     logger.info(f"获取股票 {stock_code} 的数据...")
-    df = storage.get_daily_data(stock_code, start_date, end_date)
+    df = storage.get_daily_data(stock_code, start_date, end_date, data_source=data_source)
     
     if df.empty:
         raise ValueError(f"股票 {stock_code} 没有数据")

@@ -24,9 +24,11 @@
 ## ✨ 核心特性
 
 ### 📊 数据中心
-- 🔄 **自动更新** - 集成 AkShare，自动获取并增量更新 A 股历史行情数据
+- 🔄 **自动更新** - 集成 AkShare / Tushare Pro 双数据源，自动获取并增量更新 A 股历史行情数据
 - 🗂️ **数据管理** - 支持手动触发全量或增量更新，实时查看数据状态
 - ⚡ **高效存储** - 生产环境使用 PostgreSQL + 连接池，开发可用 SQLite 回退，支持快速查询
+- 🌐 **多数据源切换** - 前端一键切换 AkShare / Tushare Pro，数据物理隔离（`data_source` 字段），旧数据保留可手动清空
+- 🚀 **批量拉取优化** - Tushare 原生批量查询（单次最多 6000 条），AkShare ThreadPoolExecutor 并发加速（N100 4 线程适配）
 
 ### 🧪 策略实验室
 - 📈 **单策略分析** - 针对单只股票运行特定策略，查看买卖信号和详细回测报告
@@ -53,7 +55,7 @@
 <table>
   <tr>
     <td><strong>后端</strong></td>
-    <td>Python 3.12 • FastAPI • Pandas • NumPy • PostgreSQL • SQLAlchemy • RestrictedPython</td>
+    <td>Python 3.12 • FastAPI • Pandas • NumPy • AkShare • Tushare Pro • PostgreSQL • SQLAlchemy • RestrictedPython</td>
   </tr>
   <tr>
     <td><strong>前端</strong></td>
@@ -114,6 +116,29 @@ uv run python scripts/setup.py
 
 # 4. 启动服务
 uv run uvicorn backend.app.main:app --reload
+```
+
+#### 数据源配置
+
+系统默认使用 **AkShare**（零配置）。如需切换至 **Tushare Pro**：
+
+1. 前往 [Tushare 官网](https://tushare.pro/register) 注册并获取 Token
+2. 登录系统后，进入「系统管理 → 数据更新管理」
+3. 选择「Tushare Pro」并粘贴 Token，点击「保存 Token」
+4. 点击「测试当前数据源」验证连接
+
+> Token 仅保存在本地数据库的 `data_update_config` 表中，不会写入 `.env` 或上传到 Git。
+
+#### AkShare 并发调优（可选）
+
+在 `.env` 中调整以下参数：
+
+```bash
+# AkShare 并发线程数（N100 建议 3-5，高性能服务器可上调）
+AKSHARE_CONCURRENCY=4
+
+# 单线程请求间隔（秒），越小越快但越容易被反爬
+AKSHARE_REQUEST_INTERVAL=0.8
 ```
 
 #### 前端

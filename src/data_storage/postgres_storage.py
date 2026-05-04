@@ -98,6 +98,7 @@ class PostgresStorage(DataStorage):
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("stock_code", String(10), nullable=False, comment="股票代码"),
             Column("trade_date", String(8), nullable=False, comment="交易日期 YYYYMMDD"),
+            Column("data_source", String(20), nullable=False, server_default="akshare", comment="数据来源 akshare/tushare"),
             Column("open", Float, nullable=False, comment="开盘价"),
             Column("close", Float, nullable=False, comment="收盘价"),
             Column("high", Float, nullable=False, comment="最高价"),
@@ -108,7 +109,7 @@ class PostgresStorage(DataStorage):
             Column("change", Float, comment="涨跌额"),
             Column("turnover", Float, comment="换手率"),
             Column("update_time", String(20), nullable=False, comment="更新时间"),
-            UniqueConstraint("stock_code", "trade_date", name="uq_stock_date"),
+            UniqueConstraint("stock_code", "trade_date", "data_source", name="uq_stock_date_source"),
         )
 
         # 策略参数表（旧版，保留向后兼容）
@@ -242,9 +243,8 @@ class PostgresStorage(DataStorage):
 
             # 创建索引
             indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_kline_stock_code ON stock_daily_kline(stock_code)",
-                "CREATE INDEX IF NOT EXISTS idx_kline_trade_date ON stock_daily_kline(trade_date)",
-                "CREATE INDEX IF NOT EXISTS idx_kline_stock_date ON stock_daily_kline(stock_code, trade_date)",
+                "CREATE INDEX IF NOT EXISTS idx_kline_by_stock ON stock_daily_kline(stock_code, data_source, trade_date)",
+                "CREATE INDEX IF NOT EXISTS idx_kline_by_date ON stock_daily_kline(trade_date, data_source, stock_code)",
                 "CREATE INDEX IF NOT EXISTS idx_param_sets_stock_strategy ON strategy_param_sets(stock_code, strategy_name)",
                 "CREATE INDEX IF NOT EXISTS idx_param_sets_created ON strategy_param_sets(created_at DESC)",
             ]
@@ -260,6 +260,7 @@ class PostgresStorage(DataStorage):
         self,
         data: pd.DataFrame,
         stock_code: str,
+        data_source: str = "akshare",
     ) -> bool:
         """批量保存日K线数据（使用 executemany 模式）"""
         if data.empty:
@@ -281,6 +282,7 @@ class PostgresStorage(DataStorage):
             records.append({
                 "stock_code": stock_code,
                 "trade_date": row["trade_date"],
+                "data_source": data_source,
                 "open": float(row["open"]),
                 "close": float(row["close"]),
                 "high": float(row["high"]),
@@ -296,12 +298,12 @@ class PostgresStorage(DataStorage):
         with self._get_connection() as conn:
             insert_sql = text("""
                 INSERT INTO stock_daily_kline
-                    (stock_code, trade_date, open, close, high, low, volume,
+                    (stock_code, trade_date, data_source, open, close, high, low, volume,
                      amount, pct_chg, change, turnover, update_time)
                 VALUES
-                    (:stock_code, :trade_date, :open, :close, :high, :low, :volume,
+                    (:stock_code, :trade_date, :data_source, :open, :close, :high, :low, :volume,
                      :amount, :pct_chg, :change, :turnover, :update_time)
-                ON CONFLICT (stock_code, trade_date) DO UPDATE SET
+                ON CONFLICT (stock_code, trade_date, data_source) DO UPDATE SET
                     open = EXCLUDED.open,
                     close = EXCLUDED.close,
                     high = EXCLUDED.high,
@@ -316,7 +318,7 @@ class PostgresStorage(DataStorage):
             conn.execute(insert_sql, records)
             conn.commit()
 
-        logger.info(f"股票 {stock_code} 保存了 {len(records)} 条数据")
+        logger.info(f"股票 {stock_code} ({data_source}) 保存了 {len(records)} 条数据")
         return True
 
     def get_daily_data(
@@ -324,17 +326,21 @@ class PostgresStorage(DataStorage):
         stock_code: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        data_source: Optional[str] = None,
     ) -> pd.DataFrame:
         """获取日K线数据"""
         with self._get_connection() as conn:
             query = """
-                SELECT stock_code, trade_date, open, close, high, low,
+                SELECT stock_code, trade_date, data_source, open, close, high, low,
                        volume, amount, pct_chg, change, turnover
                 FROM stock_daily_kline
                 WHERE stock_code = :stock_code
             """
             params = {"stock_code": stock_code}
 
+            if data_source:
+                query += " AND data_source = :data_source"
+                params["data_source"] = data_source
             if start_date:
                 query += " AND trade_date >= :start_date"
                 params["start_date"] = start_date
@@ -352,45 +358,78 @@ class PostgresStorage(DataStorage):
 
             return df
 
-    def get_latest_date(self, stock_code: str) -> Optional[str]:
+    def get_latest_date(self, stock_code: str, data_source: Optional[str] = None) -> Optional[str]:
         """获取指定股票的最新数据日期"""
         with self._get_connection() as conn:
-            result = conn.execute(
-                text("SELECT MAX(trade_date) AS latest_date FROM stock_daily_kline WHERE stock_code = :code"),
-                {"code": stock_code},
-            ).fetchone()
+            if data_source:
+                result = conn.execute(
+                    text("SELECT MAX(trade_date) AS latest_date FROM stock_daily_kline WHERE stock_code = :code AND data_source = :source"),
+                    {"code": stock_code, "source": data_source},
+                ).fetchone()
+            else:
+                result = conn.execute(
+                    text("SELECT MAX(trade_date) AS latest_date FROM stock_daily_kline WHERE stock_code = :code"),
+                    {"code": stock_code},
+                ).fetchone()
             return result[0] if result and result[0] else None
 
-    def get_all_latest_dates(self) -> dict[str, Optional[str]]:
+    def get_all_latest_dates(self, data_source: Optional[str] = None) -> dict[str, Optional[str]]:
         """批量获取所有股票的最新数据日期（单次查询，避免 N+1）"""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                text(
-                    "SELECT stock_code, MAX(trade_date) AS latest_date "
-                    "FROM stock_daily_kline GROUP BY stock_code"
-                )
-            ).fetchall()
+            if data_source:
+                rows = conn.execute(
+                    text(
+                        "SELECT stock_code, MAX(trade_date) AS latest_date "
+                        "FROM stock_daily_kline WHERE data_source = :source GROUP BY stock_code"
+                    ),
+                    {"source": data_source},
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    text(
+                        "SELECT stock_code, MAX(trade_date) AS latest_date "
+                        "FROM stock_daily_kline GROUP BY stock_code"
+                    )
+                ).fetchall()
             return {row[0]: row[1] for row in rows} if rows else {}
 
-    def check_data_exists(self, stock_code: str, trade_date: str) -> bool:
+    def check_data_exists(self, stock_code: str, trade_date: str, data_source: str = "akshare") -> bool:
         """检查指定日期的数据是否存在"""
         with self._get_connection() as conn:
             result = conn.execute(
                 text(
                     "SELECT COUNT(*) FROM stock_daily_kline "
-                    "WHERE stock_code = :code AND trade_date = :date"
+                    "WHERE stock_code = :code AND trade_date = :date AND data_source = :source"
                 ),
-                {"code": stock_code, "date": trade_date},
+                {"code": stock_code, "date": trade_date, "source": data_source},
             ).scalar()
             return result > 0
 
-    def get_all_stocks(self) -> List[str]:
+    def get_all_stocks(self, data_source: Optional[str] = None) -> List[str]:
         """获取数据库中所有股票代码列表"""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                text("SELECT DISTINCT stock_code FROM stock_daily_kline ORDER BY stock_code")
-            ).fetchall()
+            if data_source:
+                rows = conn.execute(
+                    text("SELECT DISTINCT stock_code FROM stock_daily_kline WHERE data_source = :source ORDER BY stock_code"),
+                    {"source": data_source},
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    text("SELECT DISTINCT stock_code FROM stock_daily_kline ORDER BY stock_code")
+                ).fetchall()
             return [row[0] for row in rows]
+
+    def clear_data_by_source(self, data_source: str) -> int:
+        """清空指定数据来源的所有日K线数据"""
+        with self._get_connection() as conn:
+            result = conn.execute(
+                text("DELETE FROM stock_daily_kline WHERE data_source = :source"),
+                {"source": data_source},
+            )
+            conn.commit()
+            deleted = result.rowcount
+            logger.warning(f"已清空数据来源 {data_source} 的 {deleted} 条日K线数据")
+            return deleted
 
     # ───────────────────── 策略参数操作 ─────────────────────
 

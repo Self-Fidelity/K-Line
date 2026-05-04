@@ -58,6 +58,7 @@ class DataUpdateService:
             "batch_rest_seconds": int(self._get_config("batch_rest_seconds", "60")),
             "pre_update_random_wait": int(self._get_config("pre_update_random_wait", "20")),
             "incremental_update": self._get_config("incremental_update", "true").lower() == "true",
+            "data_source": self._get_config("data_source", "akshare"),
         }
 
     def update_config(self, config: Dict):
@@ -68,6 +69,61 @@ class DataUpdateService:
 
         # 重新加载和调度任务
         self._reschedule_jobs()
+
+    def get_data_source_config(self) -> Dict:
+        """获取数据源配置"""
+        return {
+            "data_source": self._get_config("data_source", "akshare"),
+            "tushare_token": self._get_config("tushare_token", ""),
+        }
+
+    def update_data_source_config(self, config: Dict):
+        """更新数据源配置"""
+        if config.get("data_source") is not None:
+            self._set_config("data_source", config["data_source"])
+        if config.get("tushare_token") is not None:
+            # Token 允许为空字符串（清空）
+            self._set_config("tushare_token", config["tushare_token"])
+
+    def test_data_source(self, data_source: str) -> Dict:
+        """测试数据源连接
+        
+        Args:
+            data_source: 数据源名称 'akshare' 或 'tushare'
+        
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            from src.data_fetcher.providers import AkShareProvider, TushareProvider
+            
+            if data_source == "tushare":
+                token = self._get_config("tushare_token", "")
+                if not token:
+                    return {"success": False, "message": "Tushare token 未配置"}
+                provider = TushareProvider(token=token)
+            else:
+                provider = AkShareProvider()
+            
+            return provider.test_connection()
+        except Exception as e:
+            logger.error(f"测试数据源 {data_source} 连接失败: {e}", exc_info=True)
+            return {"success": False, "message": f"测试失败: {str(e)}"}
+
+    def clear_data_by_source(self, data_source: str) -> int:
+        """清空指定数据来源的所有日K线数据
+        
+        Args:
+            data_source: 数据源名称 'akshare' 或 'tushare'
+        
+        Returns:
+            删除的行数
+        """
+        try:
+            return self.storage.clear_data_by_source(data_source)
+        except Exception as e:
+            logger.error(f"清空数据源 {data_source} 数据失败: {e}", exc_info=True)
+            raise
 
     def _load_and_schedule_jobs(self):
         """加载配置并调度任务"""
@@ -119,10 +175,16 @@ class DataUpdateService:
             )
             logger.info(f"已调度股票列表更新任务: {freq_label} {config['stock_list_update_hour']}:{config['stock_list_update_minute']}")
 
-        # 启动调度器
+        # 启动调度器（在 asyncio 事件循环中运行时才启动）
         if not self.scheduler.running:
-            self.scheduler.start()
-            logger.info("定时任务调度器已启动")
+            try:
+                self.scheduler.start()
+                logger.info("定时任务调度器已启动")
+            except RuntimeError as e:
+                if "no running event loop" in str(e):
+                    logger.debug("当前无运行中的事件循环，调度器延迟启动")
+                else:
+                    raise
 
     def _reschedule_jobs(self):
         """重新调度任务"""
@@ -206,7 +268,8 @@ class DataUpdateService:
     def _get_latest_date_in_db(self, stock_code: str) -> Optional[str]:
         """获取数据库中某只股票最新数据日期"""
         try:
-            latest = self.data_service.storage.get_latest_date(stock_code)
+            data_source = self.data_service._get_current_data_source()
+            latest = self.data_service.storage.get_latest_date(stock_code, data_source=data_source)
             return latest
         except Exception:
             return None

@@ -27,6 +27,7 @@ def demo_strategy_framework():
     settings.init_directories()
     storage = SQLiteStorage()
     strategy_manager = StrategyManager()
+    data_source = storage.get_update_config("data_source", "akshare")
     
     # 列出所有已注册的策略
     strategies = strategy_manager.list_strategies()
@@ -43,7 +44,7 @@ def demo_strategy_framework():
     
     # 获取股票数据
     logger.info(f"\n获取股票 {stock_code} 的数据...")
-    df = storage.get_daily_data(stock_code, start_date="20240101", end_date="20241231")
+    df = storage.get_daily_data(stock_code, start_date="20240101", end_date="20241231", data_source=data_source)
     
     if df.empty:
         logger.warning(f"股票 {stock_code} 没有数据")

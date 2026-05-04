@@ -11,14 +11,7 @@ sys.path.insert(0, str(src_dir))
 
 from src.utils.logger import get_logger
 from src.config import settings
-# 在导入 akshare 之前先配置它
-from src.utils.akshare_config import ensure_akshare_configured
-
-# 确保 akshare 已配置
-ensure_akshare_configured()
-
-# 现在导入 akshare
-import akshare as ak
+from src.data_fetcher.fetcher import _create_provider
 
 logger = get_logger(__name__)
 
@@ -38,6 +31,7 @@ class StockListManager:
         """初始化股票列表管理器"""
         self._stock_list_cache: Optional[pd.DataFrame] = None
         self._storage = None
+        self._provider = None
         self._init_stock_list_table()
     
     def _get_storage(self):
@@ -46,6 +40,19 @@ class StockListManager:
             from src.data_storage import get_storage_instance
             self._storage = get_storage_instance()
         return self._storage
+    
+    def _get_provider(self):
+        """获取数据 Provider（延迟加载，支持配置热切换）"""
+        from src.data_fetcher.fetcher import _get_data_source
+        expected_source = _get_data_source()
+        if self._provider is None or self._provider.name != expected_source:
+            if self._provider is not None:
+                logger.info(
+                    f"数据源配置已变更: {self._provider.name} → {expected_source}，重新初始化 Provider"
+                )
+            self._provider = _create_provider()
+            logger.info(f"股票列表管理器使用数据源: {self._provider.name}")
+        return self._provider
     
     def get_stock_list(
         self,
@@ -75,14 +82,15 @@ class StockListManager:
                 self._stock_list_cache = df_db
                 logger.info(f"从数据库加载了 {len(self._stock_list_cache)} 只股票")
         
-        # 如果缓存为空或强制从 API 获取，则从 akshare 获取
+        # 如果缓存为空或强制从 API 获取，则从 API 获取
         if self._stock_list_cache is None or self._stock_list_cache.empty or force_from_api:
+            provider_name = self._get_provider().name
             if force_from_api:
-                logger.info("管理员操作：从 akshare API 获取股票列表")
+                logger.info(f"管理员操作：从 {provider_name} API 获取股票列表")
             else:
-                logger.info("数据库中没有股票列表，从 akshare API 获取")
+                logger.info(f"数据库中没有股票列表，从 {provider_name} API 获取")
             try:
-                self._stock_list_cache = self._fetch_stock_list("all")
+                self._stock_list_cache = self._get_provider().get_stock_list("all")
                 # 保存到数据库
                 if not self._stock_list_cache.empty:
                     self._save_to_database(self._stock_list_cache)
@@ -107,55 +115,6 @@ class StockListManager:
         
         logger.debug(f"过滤后，市场类型 {market} 共有 {len(df)} 只股票")
         return df
-    
-    def _fetch_stock_list(self, market: str) -> pd.DataFrame:
-        """
-        从 akshare 获取股票列表
-        
-        Args:
-            market: 市场类型，'main'（主板）、'cyb'（创业板）、'kcb'（科创板）、'all'（全部）
-        
-        Returns:
-            股票列表 DataFrame
-        """
-        try:
-            # 获取所有A股股票列表
-            df_all = ak.stock_info_a_code_name()
-            
-            # 标准化列名
-            if "code" not in df_all.columns:
-                if "股票代码" in df_all.columns:
-                    df_all.rename(columns={"股票代码": "code", "股票简称": "name"}, inplace=True)
-            
-            # 根据股票代码判断市场类型
-            def _detect_market(code: str) -> str:
-                """根据股票代码判断市场"""
-                if code.startswith("688") or code.startswith("689"):
-                    # 688/689开头是科创板
-                    return "kcb"
-                elif code.startswith("3"):
-                    # 3开头是创业板
-                    return "cyb"
-                else:
-                    # 其他都是主板（包括6开头的上海主板和0开头的深圳主板）
-                    return "main"
-            
-            # 添加市场列
-            df_all["market"] = df_all["code"].apply(_detect_market)
-            
-            # 根据市场类型过滤
-            if market != "all":
-                df_all = df_all[df_all["market"] == market].copy()
-            
-            # 确保列顺序
-            df = df_all[["code", "name", "market"]].copy()
-            
-            logger.debug(f"获取到 {len(df)} 只股票，市场: {market}")
-            return df
-            
-        except Exception as e:
-            logger.error(f"获取股票列表失败: {e}", exc_info=True)
-            raise
     
     def get_stock_codes(
         self,

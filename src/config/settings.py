@@ -49,6 +49,10 @@ class Settings:
     AKSHARE_TIMEOUT: int = int(os.getenv("AKSHARE_TIMEOUT", "30"))
     AKSHARE_RETRY_COUNT: int = int(os.getenv("AKSHARE_RETRY_COUNT", "3"))
     AKSHARE_RETRY_DELAY: int = int(os.getenv("AKSHARE_RETRY_DELAY", "1"))
+    # AkShare 并发线程数（N100 建议 3-5，避免反爬和过热）
+    AKSHARE_CONCURRENCY: int = int(os.getenv("AKSHARE_CONCURRENCY", "4"))
+    # AkShare 单线程请求间隔（秒），反爬保护
+    AKSHARE_REQUEST_INTERVAL: float = float(os.getenv("AKSHARE_REQUEST_INTERVAL", "0.8"))
     
     # 数据获取配置
     DEFAULT_MARKET: str = "main"  # 沪深主板

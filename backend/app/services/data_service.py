@@ -32,6 +32,13 @@ class DataService:
         self.stock_list_manager = StockListManager()
         self._stock_name_cache: dict[str, str] = {}
 
+    def _get_current_data_source(self) -> str:
+        """获取当前配置的数据源"""
+        try:
+            return self.storage.get_update_config("data_source", "akshare")
+        except Exception:
+            return "akshare"
+
     def get_stock_name(self, stock_code: str) -> Optional[str]:
         """获取股票名称（带缓存）"""
         if stock_code in self._stock_name_cache:
@@ -83,7 +90,9 @@ class DataService:
     def _get_all_latest_dates(self) -> dict[str, Optional[str]]:
         """批量获取所有股票的最新数据日期（单次查询）"""
         try:
-            return self.storage.get_all_latest_dates()
+            return self.storage.get_all_latest_dates(
+                data_source=self._get_current_data_source()
+            )
         except Exception as e:
             logger.error(f"批量获取最新日期失败: {e}")
             return {}
@@ -93,6 +102,7 @@ class DataService:
         stock_code: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        data_source: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         获取日K线数据
@@ -101,6 +111,7 @@ class DataService:
             stock_code: 股票代码
             start_date: 开始日期（格式：'20240101' 或 '2024-01-01'）
             end_date: 结束日期（格式：'20240101' 或 '2024-01-01'）
+            data_source: 数据源过滤，None 则使用当前配置的数据源
         
         Returns:
             日K线数据 DataFrame
@@ -111,10 +122,13 @@ class DataService:
         if end_date:
             end_date = end_date.replace("-", "")
 
+        source = data_source or self._get_current_data_source()
+
         return self.storage.get_daily_data(
             stock_code=stock_code,
             start_date=start_date,
             end_date=end_date,
+            data_source=source,
         )
     
     def get_minute_kline_data(
@@ -139,21 +153,29 @@ class DataService:
         # TODO: 实现分时数据获取（需要在SQLiteStorage中添加相应方法）
         raise NotImplementedError("分时数据获取功能待实现")
     
-    def fetch_stock_data(self, stock_code: str) -> str:
+    def fetch_stock_data(self, stock_code: str, data_source: Optional[str] = None) -> str:
         """
         触发数据获取（异步任务）
         
         Args:
             stock_code: 股票代码
+            data_source: 指定数据源，None 则使用当前配置的数据源
         
         Returns:
             任务ID（目前返回股票代码）
         """
         # TODO: 实现异步任务（使用Celery或BackgroundTasks）
         # 目前先同步获取
-        data = self.fetcher.get_daily_data(stock_code)
+        if data_source:
+            from src.data_fetcher.fetcher import StockDataFetcher
+            fetcher = StockDataFetcher(data_source=data_source)
+        else:
+            fetcher = self.fetcher
+        
+        data = fetcher.get_daily_data(stock_code)
         if not data.empty:
-            self.storage.save_daily_data(data, stock_code)
+            source = data_source or fetcher._get_provider().name
+            self.storage.save_daily_data(data, stock_code, data_source=source)
         return stock_code
 
     def calculate_chip_distribution(self, stock_code: str, days: int = 120, price_precision: float = 0.1):

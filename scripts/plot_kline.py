@@ -41,9 +41,10 @@ def plot_kline(
     # 初始化
     settings.init_directories()
     storage = SQLiteStorage()
+    data_source = storage.get_update_config("data_source", "akshare")
     
     # 获取数据
-    df = storage.get_daily_data(stock_code, start_date, end_date)
+    df = storage.get_daily_data(stock_code, start_date, end_date, data_source=data_source)
     
     if df.empty:
         logger.warning(f"股票 {stock_code} 没有数据可绘制")

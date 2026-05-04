@@ -30,6 +30,9 @@ class DataUpdateConfig(BaseModel):
     # 增量更新（跳过已有最新数据的股票）
     incremental_update: bool = True
 
+    # 数据源配置
+    data_source: str = Field(default="akshare", pattern="^(akshare|tushare)$")
+
 
 class DataUpdateConfigUpdate(BaseModel):
     """数据更新配置更新请求（所有字段可选）"""
@@ -45,6 +48,7 @@ class DataUpdateConfigUpdate(BaseModel):
     batch_rest_seconds: Optional[int] = None
     pre_update_random_wait: Optional[int] = None
     incremental_update: Optional[bool] = None
+    data_source: Optional[str] = None
 
 
 class ManualUpdateRequest(BaseModel):
@@ -62,3 +66,21 @@ class UpdateTaskStatus(BaseModel):
     progress: Optional[int] = None  # 0-100
     total: Optional[int] = None
     completed: Optional[int] = None
+
+
+class DataSourceConfig(BaseModel):
+    """数据源配置"""
+    data_source: str = Field(default="akshare", pattern="^(akshare|tushare)$")
+    tushare_token: str = ""
+
+
+class DataSourceConfigUpdate(BaseModel):
+    """数据源配置更新请求"""
+    data_source: Optional[str] = Field(default=None, pattern="^(akshare|tushare)$")
+    tushare_token: Optional[str] = None
+
+
+class DataSourceTestResult(BaseModel):
+    """数据源连接测试结果"""
+    success: bool
+    message: str

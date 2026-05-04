@@ -173,7 +173,7 @@ async def fetch_data(
     """
     触发数据获取
     
-    用于从 akshare 获取单只股票的数据（任何登录用户均可调用）
+    用于从数据源获取单只股票的数据（任何登录用户均可调用）
     """
     try:
         task_id = data_service.fetch_stock_data(request.stock_code or "")
@@ -208,7 +208,7 @@ async def refresh_stock_list(
     """
     刷新股票列表（仅管理员可用）
     
-    从 akshare API 获取最新的股票列表并更新到数据库
+    从数据源 API 获取最新的股票列表并更新到数据库
     """
     try:
         # 强制从 API 获取

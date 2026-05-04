@@ -6,32 +6,85 @@ import pandas as pd
 
 from src.utils.logger import get_logger
 from src.config import settings
-# 在导入 akshare 之前先配置它
-from src.utils.akshare_config import ensure_akshare_configured
-
-# 确保 akshare 已配置
-ensure_akshare_configured()
-
-# 现在导入 akshare
-import akshare as ak
+from src.data_fetcher.providers import AkShareProvider, TushareProvider
 
 logger = get_logger(__name__)
 
 
-class StockDataFetcher:
-    """股票数据获取器"""
+def _get_data_source() -> str:
+    """获取当前配置的数据源"""
+    try:
+        from src.data_storage import get_storage_instance
+        storage = get_storage_instance()
+        return storage.get_update_config("data_source", "akshare")
+    except Exception:
+        return "akshare"
+
+
+def _get_tushare_token() -> str:
+    """获取 Tushare token"""
+    try:
+        from src.data_storage import get_storage_instance
+        storage = get_storage_instance()
+        return storage.get_update_config("tushare_token", "")
+    except Exception:
+        return ""
+
+
+def _create_provider(source: Optional[str] = None):
+    """创建数据 Provider 实例
     
-    def __init__(self):
-        """初始化数据获取器"""
-        self.retry_count = settings.AKSHARE_RETRY_COUNT
-        self.retry_delay = settings.AKSHARE_RETRY_DELAY
+    Args:
+        source: 数据源名称，如果为 None 则读取配置
+    
+    Returns:
+        Provider 实例
+    """
+    src = source or _get_data_source()
+    
+    if src == "tushare":
+        token = _get_tushare_token()
+        if not token:
+            logger.warning("Tushare token 未配置，回退到 AkShare")
+            return AkShareProvider()
+        return TushareProvider(token=token)
+    
+    return AkShareProvider()
+
+
+class StockDataFetcher:
+    """股票数据获取器
+    
+    支持多数据源（AkShare、Tushare），根据配置自动切换。
+    """
+    
+    def __init__(self, data_source: Optional[str] = None):
+        """初始化数据获取器
+        
+        Args:
+            data_source: 指定数据源，如果为 None 则读取数据库配置
+        """
+        self._data_source = data_source
+        self._provider = None
+    
+    def _get_provider(self):
+        """获取 Provider 实例（延迟加载，支持配置热切换）"""
+        expected_source = self._data_source or _get_data_source()
+        if self._provider is None or self._provider.name != expected_source:
+            if self._provider is not None:
+                logger.info(
+                    f"数据源配置已变更: {self._provider.name} → {expected_source}，重新初始化 Provider"
+                )
+            self._provider = _create_provider(self._data_source)
+            logger.info(f"数据获取器使用数据源: {self._provider.name}")
+        return self._provider
     
     def get_daily_data(
         self,
         stock_code: str,
         start_date: str = "",
         end_date: str = "",
-        adjust: str = "hfq",  # 后复权
+        adjust: str = "hfq",
     ) -> pd.DataFrame:
         """
         获取单只股票的日K线数据
@@ -43,103 +96,9 @@ class StockDataFetcher:
             adjust: 复权类型，'hfq'（后复权）、'qfq'（前复权）、''（不复权）
         
         Returns:
-            日K线数据 DataFrame，包含字段：
-            - date: 交易日期
-            - open: 开盘价
-            - close: 收盘价
-            - high: 最高价
-            - low: 最低价
-            - volume: 成交量
-            - amount: 成交额
+            日K线数据 DataFrame
         """
-        logger.debug(f"获取股票 {stock_code} 的日K线数据，日期范围: {start_date} ~ {end_date}")
-        
-        for attempt in range(self.retry_count):
-            try:
-                # 构建参数，如果日期为空则不传递
-                params = {
-                    "symbol": stock_code,
-                    "period": "daily",
-                }
-                
-                if start_date:
-                    params["start_date"] = start_date
-                if end_date:
-                    params["end_date"] = end_date
-                
-                # 使用 akshare 获取后复权数据
-                if adjust == "hfq":
-                    params["adjust"] = "hfq"  # 后复权
-                    df = ak.stock_zh_a_hist(**params)
-                else:
-                    params["adjust"] = ""  # 不复权
-                    df = ak.stock_zh_a_hist(**params)
-                
-                if df.empty:
-                    logger.warning(f"股票 {stock_code} 未获取到数据")
-                    return pd.DataFrame()
-                
-                # 标准化列名
-                df = self._standardize_columns(df)
-                
-                logger.debug(f"成功获取股票 {stock_code} {len(df)} 条数据")
-                return df
-                
-            except Exception as e:
-                if attempt < self.retry_count - 1:
-                    logger.warning(
-                        f"获取股票 {stock_code} 数据失败（尝试 {attempt + 1}/{self.retry_count}）: {e}"
-                    )
-                    time.sleep(self.retry_delay)
-                else:
-                    logger.error(f"获取股票 {stock_code} 数据失败: {e}", exc_info=True)
-                    raise
-        
-        return pd.DataFrame()
-    
-    def _standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        标准化 DataFrame 列名
-        
-        Args:
-            df: 原始 DataFrame
-        
-        Returns:
-            标准化后的 DataFrame
-        """
-        column_mapping = {
-            "日期": "date",
-            "开盘": "open",
-            "收盘": "close",
-            "最高": "high",
-            "最低": "low",
-            "成交量": "volume",
-            "成交额": "amount",
-            "涨跌幅": "pct_chg",
-            "涨跌额": "change",
-            "换手率": "turnover",
-        }
-        
-        # 重命名列
-        df = df.rename(columns=column_mapping)
-        
-        # 确保日期列为 datetime 类型
-        if "date" in df.columns:
-            df["date"] = pd.to_datetime(df["date"])
-        
-        # 选择需要的列
-        required_columns = ["date", "open", "close", "high", "low", "volume", "amount"]
-        available_columns = [col for col in required_columns if col in df.columns]
-        
-        # 添加可选列
-        optional_columns = ["pct_chg", "change", "turnover"]
-        for col in optional_columns:
-            if col in df.columns:
-                available_columns.append(col)
-        
-        df = df[available_columns].copy()
-        
-        return df
+        return self._get_provider().get_daily_data(stock_code, start_date, end_date, adjust)
     
     def get_latest_data(self, stock_code: str, adjust: str = "hfq") -> pd.DataFrame:
         """
@@ -152,7 +111,7 @@ class StockDataFetcher:
         Returns:
             最新数据 DataFrame
         """
-        return self.get_daily_data(stock_code, adjust=adjust).tail(1)
+        return self._get_provider().get_latest_data(stock_code, adjust)
     
     def batch_fetch(
         self,
@@ -163,6 +122,8 @@ class StockDataFetcher:
     ) -> Dict[str, pd.DataFrame]:
         """
         批量获取多只股票的日K线数据
+        
+        如果 Provider 支持批量接口（如 Tushare），优先使用批量接口以大幅减少请求次数。
         
         Args:
             stock_codes: 股票代码列表
@@ -175,22 +136,30 @@ class StockDataFetcher:
         """
         logger.info(f"批量获取 {len(stock_codes)} 只股票的数据")
         
+        provider = self._get_provider()
+        
+        # 如果 Provider 实现了批量接口，优先使用
+        if hasattr(provider, "get_daily_data_batch"):
+            try:
+                return provider.get_daily_data_batch(stock_codes, start_date, end_date, adjust)
+            except Exception as e:
+                logger.warning(f"Provider 批量获取失败，fallback 到逐只获取: {e}")
+        
+        # Fallback：逐只串行获取
         results = {}
         failed_codes = []
         
         for i, code in enumerate(stock_codes, 1):
             try:
-                df = self.get_daily_data(code, start_date, end_date, adjust)
+                df = provider.get_daily_data(code, start_date, end_date, adjust)
                 if not df.empty:
                     results[code] = df
                 else:
                     failed_codes.append(code)
                 
-                # 进度日志
                 if i % 100 == 0:
                     logger.info(f"已处理 {i}/{len(stock_codes)} 只股票")
                 
-                # 避免请求过快
                 time.sleep(0.1)
                 
             except Exception as e:

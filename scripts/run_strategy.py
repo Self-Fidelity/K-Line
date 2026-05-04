@@ -49,6 +49,9 @@ def run_strategy(
     strategy_manager = StrategyManager()
     exporter = StrategyResultExporter(base_dir=Path(output_dir) if output_dir else None)
     
+    # 获取当前数据源配置
+    data_source = storage.get_update_config("data_source", "akshare")
+    
     # 检查策略是否存在（使用策略名称匹配，支持部分匹配）
     available_strategies = strategy_manager.list_strategies()
     matched_strategy = None
@@ -73,7 +76,7 @@ def run_strategy(
     
     # 获取股票数据
     logger.info(f"获取股票 {stock_code} 的数据...")
-    df = storage.get_daily_data(stock_code, start_date, end_date)
+    df = storage.get_daily_data(stock_code, start_date, end_date, data_source=data_source)
     
     if df.empty:
         raise ValueError(f"股票 {stock_code} 没有数据")
@@ -129,6 +132,9 @@ def run_all_strategies(
     storage = SQLiteStorage()
     strategy_manager = StrategyManager()
     
+    # 获取当前数据源配置
+    data_source = storage.get_update_config("data_source", "akshare")
+    
     # 获取可用策略
     strategies = strategy_manager.list_strategies()
     if not strategies:
@@ -139,7 +145,7 @@ def run_all_strategies(
     
     # 获取股票数据
     logger.info(f"获取股票 {stock_code} 的数据...")
-    df = storage.get_daily_data(stock_code, start_date, end_date)
+    df = storage.get_daily_data(stock_code, start_date, end_date, data_source=data_source)
     
     if df.empty:
         raise ValueError(f"股票 {stock_code} 没有数据")

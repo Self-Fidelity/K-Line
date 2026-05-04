@@ -22,6 +22,9 @@ export interface DataUpdateConfig {
   batch_rest_seconds: number
   pre_update_random_wait: number
   incremental_update: boolean
+
+  // 数据源配置
+  data_source: 'akshare' | 'tushare'
 }
 
 export interface SchedulerStatus {
@@ -37,6 +40,16 @@ export interface ManualUpdateRequest {
   update_type: 'stock_list' | 'daily_data' | 'all'
   market?: string
   stock_codes?: string[]
+}
+
+export interface DataSourceConfig {
+  data_source: 'akshare' | 'tushare'
+  tushare_token: string
+}
+
+export interface DataSourceTestResult {
+  success: boolean
+  message: string
 }
 
 export const dataUpdateAPI = {
@@ -61,6 +74,30 @@ export const dataUpdateAPI = {
   // 手动触发更新
   manualUpdate: async (request: ManualUpdateRequest): Promise<any> => {
     const response = await apiClient.post('/api/admin/data-update/manual-update', request)
+    return response.data
+  },
+
+  // 获取数据源配置
+  getDataSourceConfig: async (): Promise<DataSourceConfig> => {
+    const response = await apiClient.get<DataSourceConfig>('/api/admin/data-update/data-source')
+    return response.data
+  },
+
+  // 更新数据源配置
+  updateDataSourceConfig: async (config: Partial<DataSourceConfig>): Promise<DataSourceConfig> => {
+    const response = await apiClient.put<DataSourceConfig>('/api/admin/data-update/data-source', config)
+    return response.data
+  },
+
+  // 测试数据源连接
+  testDataSource: async (data_source: string): Promise<DataSourceTestResult> => {
+    const response = await apiClient.post<DataSourceTestResult>(`/api/admin/data-update/data-source/test?data_source=${data_source}`)
+    return response.data
+  },
+
+  // 清空指定数据源的历史数据
+  clearDataBySource: async (data_source: string): Promise<{ message: string; data_source: string; deleted_count: number }> => {
+    const response = await apiClient.post(`/api/admin/data-update/data-source/clear?data_source=${data_source}`)
     return response.data
   },
 }

@@ -8,6 +8,121 @@
         </div>
       </template>
 
+      <!-- 数据源配置 -->
+      <el-card class="config-card" shadow="never">
+        <template #header>
+          <div class="card-title">
+            <el-icon><DataLine /></el-icon>
+            <span>数据源配置</span>
+          </div>
+        </template>
+
+        <el-form :model="dataSourceConfig" label-width="200px" label-position="left">
+          <el-form-item label="数据提供方">
+            <el-radio-group
+              v-model="dataSourceConfig.data_source"
+              @change="handleDataSourceChange"
+              :disabled="!isAdmin"
+            >
+              <el-radio-button label="akshare">
+                <el-icon><Share /></el-icon> AkShare
+              </el-radio-button>
+              <el-radio-button label="tushare">
+                <el-icon><Connection /></el-icon> Tushare Pro
+              </el-radio-button>
+            </el-radio-group>
+            <span class="form-tip">切换数据源后，下次数据获取将使用新的数据源</span>
+          </el-form-item>
+
+          <el-form-item v-if="dataSourceConfig.data_source === 'tushare'" label="Tushare Token">
+            <el-input
+              v-model="tushareTokenInput"
+              placeholder="请输入 Tushare Pro API Token"
+              show-password
+              style="width: 400px"
+              :disabled="!isAdmin"
+            />
+            <el-button
+              type="primary"
+              :loading="testingTushare"
+              :disabled="!isAdmin || !tushareTokenInput"
+              @click="handleTestTushare"
+              style="margin-left: 10px"
+            >
+              测试连接
+            </el-button>
+            <el-button
+              type="success"
+              :loading="savingToken"
+              :disabled="!isAdmin"
+              @click="handleSaveToken"
+              style="margin-left: 10px"
+            >
+              保存 Token
+            </el-button>
+            <div class="form-tip">
+              <el-link type="primary" href="https://tushare.pro/register" target="_blank">
+                没有 Token？前往 Tushare 官网注册
+              </el-link>
+              <span style="margin-left: 8px; color: #909399">
+                Token 仅保存在本地数据库，不会上传到 GitHub
+              </span>
+            </div>
+          </el-form-item>
+
+          <el-form-item v-if="dataSourceConfig.data_source === 'tushare'" label="Token 状态">
+            <el-tag :type="dataSourceConfig.tushare_token ? 'success' : 'danger'">
+              {{ dataSourceConfig.tushare_token ? '已配置' : '未配置' }}
+            </el-tag>
+            <span class="form-tip" v-if="!dataSourceConfig.tushare_token && isAdmin" style="color: #f56c6c">
+              使用 Tushare 前必须先配置 Token
+            </span>
+          </el-form-item>
+
+          <el-form-item label="当前数据源状态">
+            <el-button
+              size="small"
+              :loading="testingCurrent"
+              :disabled="!isAdmin"
+              @click="handleTestCurrentSource"
+            >
+              测试当前数据源
+            </el-button>
+            <el-tag
+              v-if="currentTestResult"
+              :type="currentTestResult.success ? 'success' : 'danger'"
+              style="margin-left: 10px"
+            >
+              {{ currentTestResult.message }}
+            </el-tag>
+          </el-form-item>
+
+          <el-form-item label="数据清理">
+            <el-popconfirm
+              title="确定要清空该数据源的所有历史日K线数据吗？此操作不可恢复！"
+              confirm-button-text="确定清空"
+              cancel-button-text="取消"
+              :disabled="!isAdmin"
+              @confirm="handleClearData"
+            >
+              <template #reference>
+                <el-button
+                  type="danger"
+                  size="small"
+                  :disabled="!isAdmin"
+                >
+                  <el-icon><Delete /></el-icon>
+                  清空 {{ dataSourceConfig.data_source === 'tushare' ? 'AkShare' : 'Tushare' }} 历史数据
+                </el-button>
+              </template>
+            </el-popconfirm>
+            <span class="form-tip">
+              切换数据源后，旧数据仍保留在数据库中。如确认不再需要，可手动清空以释放空间。
+            </span>
+          </el-form-item>
+        </el-form>
+      </el-card>
+
       <!-- 日K线数据更新策略 -->
       <el-card class="config-card" shadow="never">
         <template #header>
@@ -24,7 +139,7 @@
               @change="handleSaveConfig"
               :disabled="!isAdmin"
             />
-            <span class="form-tip">工作日自动从 akshare 拉取日K线数据</span>
+            <span class="form-tip">工作日自动从数据源拉取日K线数据</span>
           </el-form-item>
 
           <el-form-item v-if="config.auto_update_enabled" label="执行时间">
@@ -214,7 +329,7 @@
 
         <el-space direction="vertical" style="width: 100%">
           <el-alert
-            title="手动更新会立即从 akshare API 获取最新数据，当前爬虫策略配置同样生效"
+            :title="`手动更新会立即从 ${config.data_source === 'tushare' ? 'Tushare' : 'akshare'} API 获取最新数据，当前爬虫策略配置同样生效`"
             type="warning"
             :closable="false"
             show-icon
@@ -309,8 +424,11 @@ import {
   Timer,
   Ship,
   Lightning,
+  Share,
+  Connection,
+  Delete,
 } from '@element-plus/icons-vue'
-import { dataUpdateAPI, SPEED_PRESETS, estimateDuration, type DataUpdateConfig, type SchedulerStatus } from '@/api/dataUpdate'
+import { dataUpdateAPI, SPEED_PRESETS, estimateDuration, type DataUpdateConfig, type SchedulerStatus, type DataSourceConfig, type DataSourceTestResult } from '@/api/dataUpdate'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -329,7 +447,19 @@ const config = ref<DataUpdateConfig>({
   batch_rest_seconds: 60,
   pre_update_random_wait: 20,
   incremental_update: true,
+  data_source: 'akshare',
 })
+
+const dataSourceConfig = ref<DataSourceConfig>({
+  data_source: 'akshare',
+  tushare_token: '',
+})
+
+const tushareTokenInput = ref('')
+const testingTushare = ref(false)
+const savingToken = ref(false)
+const testingCurrent = ref(false)
+const currentTestResult = ref<DataSourceTestResult | null>(null)
 
 const schedulerStatus = ref<SchedulerStatus>({
   running: false,
@@ -399,6 +529,17 @@ const loadConfig = async () => {
   }
 }
 
+// 加载数据源配置
+const loadDataSourceConfig = async () => {
+  try {
+    const data = await dataUpdateAPI.getDataSourceConfig()
+    dataSourceConfig.value = { ...dataSourceConfig.value, ...data }
+    tushareTokenInput.value = ''
+  } catch (error: any) {
+    console.error('加载数据源配置失败:', error)
+  }
+}
+
 // 加载调度器状态
 const loadSchedulerStatus = async () => {
   try {
@@ -442,6 +583,100 @@ const handleStockListTimeChange = () => {
   handleSaveConfig()
 }
 
+// 数据源切换
+const handleDataSourceChange = async () => {
+  if (!isAdmin.value) return
+  try {
+    await dataUpdateAPI.updateConfig({ data_source: dataSourceConfig.value.data_source })
+    config.value.data_source = dataSourceConfig.value.data_source
+    ElMessage.success(`数据源已切换为 ${dataSourceConfig.value.data_source === 'tushare' ? 'Tushare' : 'AkShare'}`)
+  } catch (error: any) {
+    console.error('切换数据源失败:', error)
+    ElMessage.error(error.response?.data?.detail || '切换数据源失败')
+  }
+}
+
+// 测试 Tushare 连接
+const handleTestTushare = async () => {
+  if (!isAdmin.value || !tushareTokenInput.value) return
+  testingTushare.value = true
+  try {
+    // 先临时保存 token 到后端（仅用于测试）
+    await dataUpdateAPI.updateDataSourceConfig({
+      data_source: 'tushare',
+      tushare_token: tushareTokenInput.value,
+    })
+    const result = await dataUpdateAPI.testDataSource('tushare')
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch (error: any) {
+    console.error('测试 Tushare 连接失败:', error)
+    ElMessage.error(error.response?.data?.detail || '测试连接失败')
+  } finally {
+    testingTushare.value = false
+  }
+}
+
+// 保存 Tushare Token
+const handleSaveToken = async () => {
+  if (!isAdmin.value) return
+  savingToken.value = true
+  try {
+    await dataUpdateAPI.updateDataSourceConfig({
+      data_source: 'tushare',
+      tushare_token: tushareTokenInput.value,
+    })
+    await loadDataSourceConfig()
+    ElMessage.success('Tushare Token 已保存')
+  } catch (error: any) {
+    console.error('保存 Token 失败:', error)
+    ElMessage.error(error.response?.data?.detail || '保存 Token 失败')
+  } finally {
+    savingToken.value = false
+  }
+}
+
+// 测试当前数据源
+const handleTestCurrentSource = async () => {
+  if (!isAdmin.value) return
+  testingCurrent.value = true
+  currentTestResult.value = null
+  try {
+    const result = await dataUpdateAPI.testDataSource(config.value.data_source)
+    currentTestResult.value = result
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch (error: any) {
+    console.error('测试数据源失败:', error)
+    ElMessage.error(error.response?.data?.detail || '测试失败')
+  } finally {
+    testingCurrent.value = false
+  }
+}
+
+// 清空旧数据源数据
+const handleClearData = async () => {
+  if (!isAdmin.value) {
+    ElMessage.warning('仅管理员可以执行此操作')
+    return
+  }
+
+  const targetSource = dataSourceConfig.value.data_source === 'tushare' ? 'akshare' : 'tushare'
+  try {
+    const result = await dataUpdateAPI.clearDataBySource(targetSource)
+    ElMessage.success(result.message || '数据清空成功')
+  } catch (error: any) {
+    console.error('清空数据失败:', error)
+    ElMessage.error(error.response?.data?.detail || '清空数据失败')
+  }
+}
+
 // 手动更新
 const handleManualUpdate = async (updateType: 'stock_list' | 'daily_data' | 'all') => {
   if (!isAdmin.value) {
@@ -481,6 +716,7 @@ const formatDateTime = (dateTimeStr: string) => {
 
 onMounted(async () => {
   await loadConfig()
+  await loadDataSourceConfig()
   await loadSchedulerStatus()
   setInterval(loadSchedulerStatus, 30000)
 })

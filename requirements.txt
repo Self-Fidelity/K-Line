@@ -3,6 +3,7 @@
 
 # Core Data & Analysis
 akshare>=1.12.0
+tushare>=1.4.0
 pandas>=2.1.0
 numpy>=1.24.0
 bokeh>=3.0.0
