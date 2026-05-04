@@ -1,27 +1,50 @@
 """数据更新配置模型"""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class DataUpdateConfig(BaseModel):
     """数据更新配置"""
+    # 日K线数据更新
     auto_update_enabled: bool = False
-    daily_update_hour: int = 15
-    daily_update_minute: int = 30
+    daily_update_hour: int = 19
+    daily_update_minute: int = 0
+
+    # 股票列表更新
     stock_list_update_enabled: bool = False
-    stock_list_update_hour: int = 9
+    stock_list_update_frequency: str = Field(default="weekly", pattern="^(weekly|daily)$")
+    stock_list_update_hour: int = 6
     stock_list_update_minute: int = 0
+
+    # 爬虫速度档位: slow=慢速(N100), normal=标准, fast=快速
+    update_speed_preset: str = Field(default="slow", pattern="^(slow|normal|fast)$")
+
+    # 批次休息设置（N100防过热）
+    batch_size: int = Field(default=50, ge=10, le=500)
+    batch_rest_seconds: int = Field(default=60, ge=0, le=300)
+
+    # 股票列表更新前随机等待（秒）
+    pre_update_random_wait: int = Field(default=20, ge=0, le=120)
+
+    # 增量更新（跳过已有最新数据的股票）
+    incremental_update: bool = True
 
 
 class DataUpdateConfigUpdate(BaseModel):
-    """数据更新配置更新请求"""
+    """数据更新配置更新请求（所有字段可选）"""
     auto_update_enabled: Optional[bool] = None
     daily_update_hour: Optional[int] = None
     daily_update_minute: Optional[int] = None
     stock_list_update_enabled: Optional[bool] = None
+    stock_list_update_frequency: Optional[str] = None
     stock_list_update_hour: Optional[int] = None
     stock_list_update_minute: Optional[int] = None
+    update_speed_preset: Optional[str] = None
+    batch_size: Optional[int] = None
+    batch_rest_seconds: Optional[int] = None
+    pre_update_random_wait: Optional[int] = None
+    incremental_update: Optional[bool] = None
 
 
 class ManualUpdateRequest(BaseModel):

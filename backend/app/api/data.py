@@ -38,11 +38,14 @@ async def get_stock_list(
         
         stocks = []
         for _, row in df.iterrows():
+            latest_date = row.get("latest_date")
+            if pd.isna(latest_date):
+                latest_date = None
             stocks.append(StockInfo(
                 code=row["code"],
                 name=row["name"],
                 market=row.get("market", "other"),
-                latest_date=row.get("latest_date"),
+                latest_date=latest_date,
             ))
         
         return StockListResponse(stocks=stocks, total=len(stocks))

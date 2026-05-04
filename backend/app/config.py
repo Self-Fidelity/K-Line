@@ -61,8 +61,8 @@ class Settings:
     DEFAULT_WATCHLIST_LIMIT: int = int(os.getenv("DEFAULT_WATCHLIST_LIMIT", "20"))
     
     # 日K线数据获取时间（非自选股票，交易日结束后）
-    DAILY_DATA_FETCH_HOUR: int = int(os.getenv("DAILY_DATA_FETCH_HOUR", "15"))
-    DAILY_DATA_FETCH_MINUTE: int = int(os.getenv("DAILY_DATA_FETCH_MINUTE", "30"))
+    DAILY_DATA_FETCH_HOUR: int = int(os.getenv("DAILY_DATA_FETCH_HOUR", "19"))
+    DAILY_DATA_FETCH_MINUTE: int = int(os.getenv("DAILY_DATA_FETCH_MINUTE", "0"))
     
     # 分时K线数据获取周期（分钟）
     MINUTE_DATA_FETCH_PERIODS: list[int] = [1, 5, 15, 30, 60]

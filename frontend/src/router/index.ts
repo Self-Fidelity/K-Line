@@ -51,13 +51,7 @@ const routes: RouteRecordRaw[] = [
             name: 'UserManagement',
             component: () => import('@/views/UserManagement.vue'),
             meta: { requiresAuth: true, requiresAdmin: true, title: '用户管理' },
-          },
-          {
-            path: 'daily-task',
-            name: 'DailyTaskManagement',
-            component: () => import('@/views/DailyTaskManagement.vue'),
-            meta: { requiresAuth: true, requiresAdmin: true, title: '每日任务' },
-          },
+          }
         ]
       },
       // Strategy Lab

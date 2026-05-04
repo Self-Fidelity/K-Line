@@ -75,7 +75,8 @@ class DataService:
 
         # 批量获取最新数据日期（单次 SQL 查询替代 N 次）
         latest_map = self._get_all_latest_dates()
-        df["latest_date"] = df["code"].map(latest_map).replace({np.nan: None})
+        latest_dates = df["code"].map(latest_map)
+        df["latest_date"] = [None if pd.isna(d) else str(d) for d in latest_dates]
 
         return df
 

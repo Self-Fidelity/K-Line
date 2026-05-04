@@ -126,6 +126,78 @@ npm run dev
 
 ---
 
+## 🩺 常见问题（首次运行必看）
+
+以下是首次本地部署时可能遇到的问题及修复方式，均为项目代码中已发现的缺陷，非用户操作问题。
+
+### 1. Python 3.14 无法安装依赖（numpy 编译失败）
+
+**现象**：`uv pip install` 时 numpy 1.26 构建失败，提示 `No BLAS library detected!`
+
+**原因**：项目依赖 `mealpy==3.0.3` 限制 `numpy<=1.26.0`，而 numpy 1.26 没有 Python 3.14 的预编译 wheel。
+
+**修复**：使用 Python 3.12 创建虚拟环境：
+```bash
+uv venv --python 3.12
+```
+
+### 2. 前端提示"网络连接失败，请检查网络"
+
+**现象**：登录后页面空白，控制台报 CORS 错误或 500。
+
+**原因**：`frontend/` 目录缺少 `.env` 文件，`VITE_API_BASE_URL` 默认回退到 `http://localhost:8000`。通过局域网 IP 访问时，浏览器向 `localhost:8000` 发跨域请求被拦截；同时 Vite 的 `/api` 代理也未生效。
+
+**修复**：创建 `frontend/.env`：
+```bash
+cp frontend/.env.example frontend/.env
+# 或手动创建，内容：
+# VITE_API_BASE_URL=/
+# VITE_BASE_PATH=/
+```
+
+### 3. 登录报错 500：no such table: users
+
+**现象**：点击登录后后端 500，日志显示 `sqlite3.OperationalError: no such table: users`。
+
+**原因**：`scripts/setup.py` 仅初始化目录和部分表，**未创建 `users` 表**。此外，`sqlite_storage.py` 与 `auth.py` 的字段名不一致（`password_hash` vs `hashed_password`），且缺少 `max_watchlist_count` 字段。
+
+**修复**：弃用 `scripts/setup.py`，改用更完整的初始化脚本：
+```bash
+# SQLite 环境
+export DATABASE_TYPE=sqlite   # Windows: $env:DATABASE_TYPE="sqlite"
+python backend/scripts/init_db.py
+
+# 创建默认管理员（用户名 admin / 密码 admin123）
+python -c "
+import sqlite3
+from backend.app.utils.security import get_password_hash
+from datetime import datetime, timezone
+conn = sqlite3.connect('data/database/kline.db')
+cursor = conn.cursor()
+hashed = get_password_hash('admin123')
+cursor.execute(
+    'INSERT OR IGNORE INTO users (username, email, hashed_password, role, max_watchlist_count, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ('admin', 'admin@example.com', hashed, 'admin', 20, 1, datetime.now(timezone.utc).isoformat())
+)
+conn.commit()
+conn.close()
+"
+```
+
+### 4. 自选股/股票列表返回 500
+
+**现象**：登录后 Dashboard 和数据中心页面报 500，涉及 `/api/watchlist` 和 `/api/data/stocks`。
+
+**原因**：
+- `watchlist` 表未在初始化时创建（仅懒加载在 `list_custom_strategies()` 中）。
+- `data_service.py` 对无数据股票填充 `np.nan`，`data.py` 使用 `df.iterrows()` 遍历时 pandas 将 `None` 转为 `float(nan)`，导致 Pydantic `Optional[str]` 校验失败。
+
+**修复**：
+- 使用 `backend/scripts/init_db.py` 重建数据库（已包含 `watchlist` 表）。
+- 修改 `backend/app/api/data.py`，在构造 `StockInfo` 前用 `pd.isna()` 检测并显式转为 Python `None`。
+
+---
+
 ## 📂 项目结构
 
 ```

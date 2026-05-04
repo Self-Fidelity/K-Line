@@ -126,6 +126,20 @@ class SQLiteStorage(DataStorage):
                 ON strategy_param_sets(created_at DESC)
             """)
             
+            # 创建用户表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    email TEXT,
+                    hashed_password TEXT NOT NULL,
+                    role TEXT DEFAULT 'user',
+                    max_watchlist_count INTEGER DEFAULT 20,
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            
             conn.commit()
             logger.info(f"数据库初始化完成: {self.database_path}")
             
@@ -947,12 +961,12 @@ class SQLiteStorage(DataStorage):
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
                     email TEXT,
+                    hashed_password TEXT NOT NULL,
                     role TEXT DEFAULT 'user',
+                    max_watchlist_count INTEGER DEFAULT 20,
                     is_active INTEGER DEFAULT 1,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT
+                    created_at TEXT NOT NULL
                 )
             """)
             query = """

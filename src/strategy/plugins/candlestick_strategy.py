@@ -221,10 +221,7 @@ class HammerStrategy(BaseStrategy):
             }
         )
         self.shadow_ratio = shadow_ratio
-
-    def get_param_bounds(self) -> dict:
-        return {"shadow_ratio": (1.0, 3.5, float)}
-
+    
     def analyze(
         self,
         data: pd.DataFrame,
@@ -305,10 +302,7 @@ class HangingManStrategy(BaseStrategy):
             }
         )
         self.shadow_ratio = shadow_ratio
-
-    def get_param_bounds(self) -> dict:
-        return {"shadow_ratio": (1.0, 3.5, float)}
-
+    
     def analyze(
         self,
         data: pd.DataFrame,
@@ -391,13 +385,7 @@ class DojiStrategy(BaseStrategy):
         )
         self.lookback = lookback
         self.doji_threshold = doji_threshold
-
-    def get_param_bounds(self) -> dict:
-        return {
-            "lookback": (3, 20, int),
-            "doji_threshold": (0.05, 0.25, float),
-        }
-
+    
     def analyze(
         self,
         data: pd.DataFrame,
