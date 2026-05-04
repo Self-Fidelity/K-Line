@@ -169,6 +169,7 @@ class PostgresStorage(DataStorage):
             Column("password_hash", String(255), nullable=False),
             Column("email", String(255)),
             Column("role", String(20), default="user"),
+            Column("max_watchlist_count", Integer, default=20),
             Column("is_active", Integer, default=1),
             Column("created_at", String(20), nullable=False),
             Column("updated_at", String(20)),
@@ -216,6 +217,24 @@ class PostgresStorage(DataStorage):
             Column("created_at", String(20), nullable=False),
             UniqueConstraint("user_id", "stock_code", name="uq_watchlist_user_stock"),
         )
+
+        # 股票列表表
+        Table(
+            "stock_list",
+            metadata,
+            Column("code", String(10), primary_key=True),
+            Column("name", String(100), nullable=False),
+            Column("market", String(20), nullable=False),
+            Column("update_time", String(20), nullable=False),
+        )
+
+        # 数据更新配置表
+        Table(
+            "data_update_config",
+            metadata,
+            Column("key", String(100), primary_key=True),
+            Column("value", String(500), nullable=False),
+            Column("updated_at", String(20), nullable=False),
         )
 
         with self._get_connection() as conn:
@@ -906,6 +925,80 @@ class PostgresStorage(DataStorage):
                 {"uid": user_id, "code": stock_code},
             ).scalar()
             return result > 0
+
+    # ───────────────────── 股票列表 ─────────────────────
+
+    def init_stock_list_table(self) -> None:
+        """初始化股票列表表（已在 _init_tables 中创建）"""
+        pass
+
+    def load_stock_list(self) -> Optional[pd.DataFrame]:
+        """从数据库加载股票列表"""
+        try:
+            with self._get_connection() as conn:
+                df = pd.read_sql_query(
+                    "SELECT code, name, market FROM stock_list", conn
+                )
+                if not df.empty:
+                    return df
+                return None
+        except Exception as e:
+            logger.debug(f"从数据库加载股票列表失败: {e}")
+            return None
+
+    def save_stock_list(self, df: pd.DataFrame) -> None:
+        """保存股票列表到数据库"""
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with self._get_connection() as conn:
+                conn.execute(text("DELETE FROM stock_list"))
+                for _, row in df.iterrows():
+                    conn.execute(
+                        text("""
+                            INSERT INTO stock_list (code, name, market, update_time)
+                            VALUES (:code, :name, :market, :ut)
+                        """),
+                        {"code": row["code"], "name": row["name"],
+                         "market": row["market"], "ut": now},
+                    )
+                conn.commit()
+                logger.debug(f"股票列表已保存到数据库，共 {len(df)} 只股票")
+        except Exception as e:
+            logger.error(f"保存股票列表到数据库失败: {e}", exc_info=True)
+
+    # ───────────────────── 数据更新配置 ─────────────────────
+
+    def init_update_config_table(self) -> None:
+        """初始化数据更新配置表（已在 _init_tables 中创建）"""
+        pass
+
+    def get_update_config(self, key: str, default: str) -> str:
+        """获取更新配置值"""
+        try:
+            with self._get_connection() as conn:
+                row = conn.execute(
+                    text("SELECT value FROM data_update_config WHERE key = :key"),
+                    {"key": key},
+                ).fetchone()
+                return row[0] if row else default
+        except Exception:
+            return default
+
+    def set_update_config(self, key: str, value: str) -> None:
+        """设置更新配置值"""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._get_connection() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO data_update_config (key, value, updated_at)
+                    VALUES (:key, :value, :now)
+                    ON CONFLICT (key) DO UPDATE SET
+                        value = EXCLUDED.value,
+                        updated_at = EXCLUDED.updated_at
+                """),
+                {"key": key, "value": value, "now": now},
+            )
+            conn.commit()
 
     # ───────────────────── 工具方法 ─────────────────────
 

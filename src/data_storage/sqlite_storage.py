@@ -175,6 +175,16 @@ class SQLiteStorage(DataStorage):
                     updated_at TEXT NOT NULL
                 )
             """)
+
+            # 创建股票列表表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS stock_list (
+                    code TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    market TEXT NOT NULL,
+                    update_time TEXT NOT NULL
+                )
+            """)
             
             conn.commit()
             logger.info(f"数据库初始化完成: {self.database_path}")
@@ -1159,6 +1169,44 @@ class SQLiteStorage(DataStorage):
             return cursor.rowcount > 0
         finally:
             conn.close()
+
+    # ───────────────────── 股票列表 ─────────────────────
+
+    def init_stock_list_table(self) -> None:
+        """初始化股票列表表（已在 _init_database 中创建）"""
+        pass
+
+    def load_stock_list(self) -> Optional[pd.DataFrame]:
+        """从数据库加载股票列表"""
+        try:
+            conn = self._get_connection()
+            df = pd.read_sql_query("SELECT code, name, market FROM stock_list", conn)
+            conn.close()
+            if not df.empty:
+                return df
+            return None
+        except Exception as e:
+            logger.debug(f"从数据库加载股票列表失败: {e}")
+            return None
+
+    def save_stock_list(self, df: pd.DataFrame) -> None:
+        """保存股票列表到数据库"""
+        try:
+            from datetime import datetime
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM stock_list")
+            update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for _, row in df.iterrows():
+                cursor.execute(
+                    "INSERT OR REPLACE INTO stock_list (code, name, market, update_time) VALUES (?, ?, ?, ?)",
+                    (row["code"], row["name"], row["market"], update_time),
+                )
+            conn.commit()
+            conn.close()
+            logger.debug(f"股票列表已保存到数据库，共 {len(df)} 只股票")
+        except Exception as e:
+            logger.error(f"保存股票列表到数据库失败: {e}", exc_info=True)
 
     # ───────────────────── 审计日志 ─────────────────────
 

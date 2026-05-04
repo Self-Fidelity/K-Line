@@ -129,6 +129,23 @@ class DataStorage(ABC):
         """检查是否在自选股中"""
         pass
 
+    # ───────────────────── 股票列表 ─────────────────────
+
+    @abstractmethod
+    def init_stock_list_table(self) -> None:
+        """初始化股票列表表"""
+        pass
+
+    @abstractmethod
+    def load_stock_list(self) -> Optional[pd.DataFrame]:
+        """从数据库加载股票列表"""
+        pass
+
+    @abstractmethod
+    def save_stock_list(self, df: pd.DataFrame) -> None:
+        """保存股票列表到数据库"""
+        pass
+
     # ───────────────────── 用户管理 ─────────────────────
 
     @abstractmethod

@@ -4,7 +4,6 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import sys
 import pandas as pd
-import sqlite3
 
 # 添加src目录到路径
 src_dir = Path(__file__).parent.parent
@@ -38,7 +37,15 @@ class StockListManager:
     def __init__(self):
         """初始化股票列表管理器"""
         self._stock_list_cache: Optional[pd.DataFrame] = None
+        self._storage = None
         self._init_stock_list_table()
+    
+    def _get_storage(self):
+        """获取存储实例（延迟加载）"""
+        if self._storage is None:
+            from src.data_storage import get_storage_instance
+            self._storage = get_storage_instance()
+        return self._storage
     
     def get_stock_list(
         self,
@@ -191,32 +198,14 @@ class StockListManager:
     def _init_stock_list_table(self) -> None:
         """初始化股票列表数据库表"""
         try:
-            database_path = settings.get_database_path()
-            conn = sqlite3.connect(database_path)
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS stock_list (
-                    code TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    market TEXT NOT NULL,
-                    update_time TEXT NOT NULL
-                )
-            """)
-            conn.commit()
-            conn.close()
+            self._get_storage().init_stock_list_table()
         except Exception as e:
             logger.error(f"初始化股票列表表失败: {e}", exc_info=True)
     
     def _load_from_database(self) -> Optional[pd.DataFrame]:
         """从数据库加载股票列表"""
         try:
-            database_path = settings.get_database_path()
-            conn = sqlite3.connect(database_path)
-            df = pd.read_sql_query("SELECT code, name, market FROM stock_list", conn)
-            conn.close()
-            if not df.empty:
-                return df
-            return None
+            return self._get_storage().load_stock_list()
         except Exception as e:
             logger.debug(f"从数据库加载股票列表失败: {e}")
             return None
@@ -224,25 +213,7 @@ class StockListManager:
     def _save_to_database(self, df: pd.DataFrame) -> None:
         """保存股票列表到数据库"""
         try:
-            from datetime import datetime
-            database_path = settings.get_database_path()
-            conn = sqlite3.connect(database_path)
-            cursor = conn.cursor()
-            
-            # 清空旧数据
-            cursor.execute("DELETE FROM stock_list")
-            
-            # 插入新数据
-            update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            for _, row in df.iterrows():
-                cursor.execute(
-                    "INSERT OR REPLACE INTO stock_list (code, name, market, update_time) VALUES (?, ?, ?, ?)",
-                    (row["code"], row["name"], row["market"], update_time)
-                )
-            
-            conn.commit()
-            conn.close()
-            logger.debug(f"股票列表已保存到数据库，共 {len(df)} 只股票")
+            self._get_storage().save_stock_list(df)
         except Exception as e:
             logger.error(f"保存股票列表到数据库失败: {e}", exc_info=True)
     
