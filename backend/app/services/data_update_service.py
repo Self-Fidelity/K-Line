@@ -1,6 +1,5 @@
 """数据更新服务：管理定时任务和手动更新"""
 
-import sqlite3
 import time
 import random
 import gc
@@ -11,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from backend.app.config import settings
 from backend.app.services.data_service import DataService
+from backend.app.dependencies import get_storage
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,55 +30,18 @@ class DataUpdateService:
     def __init__(self):
         """初始化服务"""
         self.data_service = DataService()
+        self.storage = get_storage()
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
-        self._init_config_table()
+        self.storage.init_update_config_table()
         self._load_and_schedule_jobs()
-
-    def _init_config_table(self):
-        """初始化配置表"""
-        try:
-            conn = sqlite3.connect(settings.DATABASE_PATH)
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS data_update_config (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    key TEXT UNIQUE NOT NULL,
-                    value TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"初始化配置表失败: {e}", exc_info=True)
 
     def _get_config(self, key: str, default: str) -> str:
         """获取配置值"""
-        try:
-            conn = sqlite3.connect(settings.DATABASE_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM data_update_config WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            conn.close()
-            return row[0] if row else default
-        except Exception as e:
-            logger.error(f"获取配置失败: {e}")
-            return default
+        return self.storage.get_update_config(key, default)
 
     def _set_config(self, key: str, value: str):
         """设置配置值"""
-        try:
-            conn = sqlite3.connect(settings.DATABASE_PATH)
-            cursor = conn.cursor()
-            now = datetime.now(timezone.utc).isoformat()
-            cursor.execute(
-                "INSERT OR REPLACE INTO data_update_config (key, value, updated_at) VALUES (?, ?, ?)",
-                (key, value, now)
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"设置配置失败: {e}", exc_info=True)
+        self.storage.set_update_config(key, value)
 
     def get_config(self) -> Dict:
         """获取当前配置"""

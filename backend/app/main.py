@@ -1,5 +1,8 @@
 """FastAPI 主应用"""
 
+import colorama
+colorama.init()
+
 import logging
 import sys
 import time

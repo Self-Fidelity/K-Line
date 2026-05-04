@@ -2,10 +2,8 @@
 
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlite3 import Connection
 import pandas as pd
 
-from backend.app.dependencies import get_db
 from backend.app.api.auth import get_current_user_id, get_current_admin_user
 from backend.app.models.data import (
     StockListResponse,

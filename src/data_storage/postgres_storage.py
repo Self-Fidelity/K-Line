@@ -756,26 +756,47 @@ class PostgresStorage(DataStorage):
         password_hash: str,
         email: Optional[str] = None,
         role: str = "user",
+        max_watchlist_count: Optional[int] = None,
+        is_active: bool = True,
     ) -> int:
         """创建用户，返回ID"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if max_watchlist_count is None:
+            max_watchlist_count = 20
         with self._get_connection() as conn:
             result = conn.execute(
                 text("""
-                    INSERT INTO users (username, password_hash, email, role, created_at)
-                    VALUES (:un, :ph, :email, :role, :now)
+                    INSERT INTO users (username, password_hash, email, role,
+                                       max_watchlist_count, is_active, created_at)
+                    VALUES (:un, :ph, :email, :role, :mwc, :ia, :now)
                     RETURNING id
                 """),
-                {"un": username, "ph": password_hash, "email": email, "role": role, "now": now},
+                {"un": username, "ph": password_hash, "email": email, "role": role,
+                 "mwc": max_watchlist_count, "ia": is_active, "now": now},
             )
             conn.commit()
             return result.fetchone()[0]
 
-    def list_users(self) -> List[Dict[str, Any]]:
+    def check_email_exists(self, email: str) -> bool:
+        """检查邮箱是否已存在"""
+        if not email:
+            return False
+        with self._get_connection() as conn:
+            row = conn.execute(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": email},
+            ).fetchone()
+            return row is not None
+
+    def list_users(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """列出所有用户"""
         with self._get_connection() as conn:
             rows = conn.execute(
-                text("SELECT id, username, email, role, is_active, created_at FROM users ORDER BY id")
+                text(
+                    "SELECT id, username, email, role, max_watchlist_count, "
+                    "is_active, created_at FROM users ORDER BY id LIMIT :limit OFFSET :skip"
+                ),
+                {"limit": limit, "skip": skip},
             ).fetchall()
             return [dict(row._mapping) for row in rows]
 

@@ -4,9 +4,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlite3 import Connection
 
-from backend.app.dependencies import get_db
+from backend.app.dependencies import get_storage
 from backend.app.models.auth import (
     Token,
     UserCreate,
@@ -29,16 +28,37 @@ log_service = AuditLogService()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-# ... (omitted get_current_user_id and others) ...
+
+def _get_user_by_username(storage, username: str) -> dict | None:
+    """根据用户名获取用户（内部辅助）"""
+    return storage.get_user_by_username(username)
+
+
+def _get_user_by_id(storage, user_id: int) -> dict | None:
+    """根据ID获取用户（内部辅助）"""
+    return storage.get_user_by_id(user_id)
+
+
+def _authenticate_user(storage, username: str, password: str) -> dict | None:
+    """验证用户（内部辅助）"""
+    user = _get_user_by_username(storage, username)
+    if not user:
+        return None
+    if not verify_password(password, user["hashed_password"]):
+        return None
+    if not user.get("is_active", True):
+        return None
+    return user
+
 
 @router.post("/login", response_model=Token)
 async def login(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    db: Annotated[Connection, Depends(get_db)],
 ):
     """用户登录"""
-    user = authenticate_user(db, form_data.username, form_data.password)
+    storage = get_storage()
+    user = _authenticate_user(storage, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,9 +85,9 @@ async def login(
     )
     return Token(access_token=access_token, token_type="bearer")
 
+
 def get_current_user_id(
     token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[Connection, Depends(get_db)],
 ) -> int:
     """获取当前用户ID"""
     payload = decode_access_token(token)
@@ -95,76 +115,12 @@ def get_current_user_id(
     return user_id
 
 
-def get_user_by_username(db: Connection, username: str) -> dict | None:
-    """根据用户名获取用户"""
-    cursor = db.cursor()
-    cursor.execute(
-        "SELECT id, username, email, hashed_password, role, max_watchlist_count, is_active, created_at "
-        "FROM users WHERE username = ?",
-        (username,),
-    )
-    row = cursor.fetchone()
-    if row:
-        # 如果row_factory是Row，可以直接用dict()转换
-        # 如果是tuple，需要手动构建字典
-        if hasattr(row, 'keys'):
-            return dict(row)
-        else:
-            # 手动构建字典
-            return {
-                'id': row[0],
-                'username': row[1],
-                'email': row[2],
-                'hashed_password': row[3],
-                'role': row[4],
-                'max_watchlist_count': row[5],
-                'is_active': row[6],
-                'created_at': row[7],
-            }
-    return None
-
-
-def get_user_by_id(db: Connection, user_id: int) -> dict | None:
-    """根据ID获取用户"""
-    cursor = db.cursor()
-    cursor.execute(
-        "SELECT id, username, email, role, max_watchlist_count, is_active, created_at "
-        "FROM users WHERE id = ?",
-        (user_id,),
-    )
-    row = cursor.fetchone()
-    if row:
-        return dict(row)
-    return None
-
-
-def authenticate_user(db: Connection, username: str, password: str) -> dict | None:
-    """验证用户"""
-    user = get_user_by_username(db, username)
-    if not user:
-        return None
-    if not verify_password(password, user["hashed_password"]):
-        return None
-    if not user["is_active"]:
-        return None
-    return user
-
-
-
-
-
-@router.post("/logout")
-async def logout():
-    """用户登出（客户端删除token即可）"""
-    return {"message": "登出成功"}
-
-
 def get_current_user(
     current_user_id: Annotated[int, Depends(get_current_user_id)],
-    db: Annotated[Connection, Depends(get_db)],
 ) -> dict:
     """获取当前用户（包含角色信息）"""
-    user = get_user_by_id(db, current_user_id)
+    storage = get_storage()
+    user = _get_user_by_id(storage, current_user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -176,44 +132,44 @@ def get_current_user(
 @router.get("/me", response_model=UserResponse)
 async def get_current_active_user(
     current_user_id: Annotated[int, Depends(get_current_user_id)],
-    db: Annotated[Connection, Depends(get_db)],
 ):
     """获取当前活跃用户信息"""
-    user = get_user_by_id(db, current_user_id)
+    storage = get_storage()
+    user = _get_user_by_id(storage, current_user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在",
         )
-    if not user["is_active"]:
+    if not user.get("is_active", True):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户已禁用",
         )
     # 将字典转换为 UserResponse 模型
     return UserResponse(
-        id=user['id'],
-        username=user['username'],
-        email=user['email'],
-        role=user['role'],
-        max_watchlist_count=user['max_watchlist_count'],
-        is_active=bool(user['is_active']),
-        created_at=user['created_at']
+        id=user["id"],
+        username=user["username"],
+        email=user.get("email"),
+        role=user["role"],
+        max_watchlist_count=user.get("max_watchlist_count", 20),
+        is_active=bool(user.get("is_active", True)),
+        created_at=user.get("created_at"),
     )
 
 
 def get_current_admin_user(
     current_user_id: Annotated[int, Depends(get_current_user_id)],
-    db: Annotated[Connection, Depends(get_db)],
 ) -> dict:
     """获取当前管理员用户（必须是admin角色）"""
-    user = get_user_by_id(db, current_user_id)
+    storage = get_storage()
+    user = _get_user_by_id(storage, current_user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在",
         )
-    if user["role"] != "admin":
+    if user.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="权限不足，需要管理员权限",
@@ -225,20 +181,18 @@ def get_current_admin_user(
 async def register(
     user_data: UserCreate,
     current_admin: Annotated[dict, Depends(get_current_admin_user)],
-    db: Annotated[Connection, Depends(get_db)],
 ):
     """管理员添加用户（只有管理员可以调用）"""
+    storage = get_storage()
     # 检查用户名是否已存在
-    if get_user_by_username(db, user_data.username):
+    if _get_user_by_username(storage, user_data.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户名已存在",
         )
     
     # 检查邮箱是否已存在
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = ?", (user_data.email,))
-    if cursor.fetchone():
+    if storage.check_email_exists(user_data.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱已存在",
@@ -248,21 +202,20 @@ async def register(
     hashed_password = get_password_hash(user_data.password)
     max_watchlist_count = user_data.max_watchlist_count or settings.DEFAULT_WATCHLIST_LIMIT
     
-    cursor.execute(
-        "INSERT INTO users (username, email, hashed_password, role, max_watchlist_count, is_active, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            user_data.username,
-            user_data.email,
-            hashed_password,
-            user_data.role,
-            max_watchlist_count,
-            True,
-            datetime.now(timezone.utc).isoformat(),
-        ),
+    user_id = storage.create_user(
+        username=user_data.username,
+        password_hash=hashed_password,
+        email=user_data.email,
+        role=user_data.role,
+        max_watchlist_count=max_watchlist_count,
+        is_active=True,
     )
-    db.commit()
-    user_id = cursor.lastrowid
     
-    user = get_user_by_id(db, user_id)
+    user = _get_user_by_id(storage, user_id)
     return UserResponse(**user)
+
+
+@router.post("/logout")
+async def logout():
+    """用户登出（客户端删除token即可）"""
+    return {"message": "登出成功"}

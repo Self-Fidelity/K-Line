@@ -139,6 +139,42 @@ class SQLiteStorage(DataStorage):
                     created_at TEXT NOT NULL
                 )
             """)
+
+            # 创建审计日志表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    username TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    details TEXT,
+                    ip_address TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            # 创建自选股表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS watchlist (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    stock_code TEXT NOT NULL,
+                    stock_name TEXT,
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(user_id, stock_code)
+                )
+            """)
+
+            # 创建数据更新配置表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS data_update_config (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT UNIQUE NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
             
             conn.commit()
             logger.info(f"数据库初始化完成: {self.database_path}")
@@ -989,5 +1025,283 @@ class SQLiteStorage(DataStorage):
         except Exception as e:
             logger.error(f"列出自定义策略失败: {e}", exc_info=True)
             return []
+        finally:
+            conn.close()
+
+    # ───────────────────── 用户管理 ─────────────────────
+
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """根据用户名获取用户"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, username, email, hashed_password, role,
+                       max_watchlist_count, is_active, created_at
+                FROM users WHERE username = ?
+                """,
+                (username,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+        finally:
+            conn.close()
+
+    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取用户"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, username, email, role,
+                       max_watchlist_count, is_active, created_at
+                FROM users WHERE id = ?
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+        finally:
+            conn.close()
+
+    def create_user(
+        self,
+        username: str,
+        password_hash: str,
+        email: Optional[str] = None,
+        role: str = "user",
+        max_watchlist_count: Optional[int] = None,
+        is_active: bool = True,
+    ) -> int:
+        """创建用户，返回ID"""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if max_watchlist_count is None:
+            max_watchlist_count = 20
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO users (username, email, hashed_password, role,
+                                   max_watchlist_count, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (username, email, password_hash, role,
+                 max_watchlist_count, 1 if is_active else 0, now),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def check_email_exists(self, email: str) -> bool:
+        """检查邮箱是否已存在"""
+        if not email:
+            return False
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            return cursor.fetchone() is not None
+        finally:
+            conn.close()
+
+    def list_users(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+        """列出所有用户"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, username, email, role,
+                       max_watchlist_count, is_active, created_at
+                FROM users
+                ORDER BY id
+                LIMIT ? OFFSET ?
+                """,
+                (limit, skip),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def update_user(self, user_id: int, **fields: Any) -> bool:
+        """更新用户字段"""
+        if not fields:
+            return False
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            set_clause = ", ".join(f"{k} = ?" for k in fields)
+            values = list(fields.values()) + [user_id]
+            cursor.execute(
+                f"UPDATE users SET {set_clause} WHERE id = ?",
+                values,
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_user(self, user_id: int) -> bool:
+        """删除用户"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    # ───────────────────── 审计日志 ─────────────────────
+
+    def create_audit_log(
+        self,
+        username: str,
+        action: str,
+        details: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ) -> int:
+        """创建审计日志"""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO audit_logs (username, action, details, ip_address, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (username, action, details, ip_address, now),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def list_audit_logs(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出审计日志"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    # ───────────────────── 自选股 ─────────────────────
+
+    def add_to_watchlist(
+        self, user_id: int, stock_code: str, stock_name: Optional[str] = None
+    ) -> int:
+        """添加到自选股"""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO watchlist (user_id, stock_code, stock_name, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, stock_code, stock_name, now),
+            )
+            conn.commit()
+            return cursor.lastrowid if cursor.lastrowid else -1
+        finally:
+            conn.close()
+
+    def remove_from_watchlist(self, user_id: int, stock_code: str) -> bool:
+        """从自选股删除"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM watchlist WHERE user_id = ? AND stock_code = ?",
+                (user_id, stock_code),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_watchlist(self, user_id: int) -> List[Dict[str, Any]]:
+        """获取用户自选股列表"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT w.id, w.user_id, w.stock_code, s.name as stock_name, w.created_at
+                FROM watchlist w
+                LEFT JOIN stock_list s ON w.stock_code = s.code
+                WHERE w.user_id = ?
+                ORDER BY w.created_at DESC
+                """,
+                (user_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def is_in_watchlist(self, user_id: int, stock_code: str) -> bool:
+        """检查是否在自选股中"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM watchlist WHERE user_id = ? AND stock_code = ?",
+                (user_id, stock_code),
+            )
+            return cursor.fetchone() is not None
+        finally:
+            conn.close()
+
+    # ───────────────────── 数据更新配置 ─────────────────────
+
+    def init_update_config_table(self) -> None:
+        """初始化数据更新配置表（已在 _init_database 中创建）"""
+        pass
+
+    def get_update_config(self, key: str, default: str) -> str:
+        """获取更新配置值"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT value FROM data_update_config WHERE key = ?",
+                (key,),
+            )
+            row = cursor.fetchone()
+            return row["value"] if row else default
+        except Exception:
+            return default
+        finally:
+            conn.close()
+
+    def set_update_config(self, key: str, value: str) -> None:
+        """设置更新配置值"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO data_update_config (key, value, updated_at)
+                VALUES (?, ?, ?)
+                """,
+                (key, value, now),
+            )
+            conn.commit()
         finally:
             conn.close()

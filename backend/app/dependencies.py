@@ -4,22 +4,23 @@
 使用工厂函数模式，根据配置自动选择存储后端。
 """
 
-from typing import Generator, Union
-from contextlib import contextmanager
+from typing import Generator
+from functools import lru_cache
 
 from backend.app.config import settings
 
 
+@lru_cache(maxsize=1)
 def get_storage():
     """
-    获取数据存储实例（工厂函数）
+    获取数据存储实例（单例工厂函数）
 
     根据 DATABASE_TYPE 配置自动选择存储后端：
     - postgresql: 使用 PostgreSQL + SQLAlchemy 连接池
     - sqlite: 使用 SQLite（回退方案）
 
     Returns:
-        DataStorage 实例
+        DataStorage 实例（单例，全局复用）
     """
     if settings.DATABASE_TYPE == "postgresql":
         from src.data_storage.postgres_storage import PostgresStorage
