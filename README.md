@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/Vue-3.0+-brightgreen.svg" alt="Vue">
   <img src="https://img.shields.io/badge/FastAPI-Latest-009688.svg" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Version-1.1.2-orange.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.1.3-orange.svg" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
 
@@ -43,6 +43,9 @@
 - 📐 **技术指标** - 内置 MA、MACD、RSI、布林带等多种指标，支持自定义
 - 🎲 **筹码分布 (CYQ)** - 🆕 实现的筹码分布指标，帮助分析支撑压力位
 - 🎯 **交易信号标记** - 在图表上直观展示策略生成的买卖点
+- 🔤 **拼音首字母搜索** - 🆕 股票输入框支持拼音首字母简写搜索（如 `gzmt` → 贵州茅台），与代码/名称搜索并存
+- 🔄 **复权切换** - 🆕 K线图支持前复权/后复权/不复权实时切换，数据物理隔离不混淆
+- 🌐 **数据源选择器** - 🆕 数据管理页面和个股界面均可独立切换 AkShare / Tushare Pro 数据源
 
 ### 🔐 系统管理
 - 👥 **用户管理** - 完善的基于角色的权限控制 (RBAC)
@@ -60,13 +63,46 @@
   </tr>
   <tr>
     <td><strong>前端</strong></td>
-    <td>Vue 3 • TypeScript • Vite • Element Plus • Lightweight Charts</td>
+    <td>Vue 3 • TypeScript • Vite • Element Plus • Lightweight Charts • pinyin-pro</td>
   </tr>
   <tr>
     <td><strong>部署</strong></td>
     <td>Docker • Docker Compose • Nginx • PostgreSQL</td>
   </tr>
 </table>
+
+---
+
+## 🗄️ 数据库结构概览
+
+系统使用 **PostgreSQL**（生产）或 **SQLite**（开发）双存储后端，通过 `DataStorage` 抽象层统一访问。
+
+### 市场数据
+
+| 表名 | 说明 | 关键字段 |
+|------|------|---------|
+| `stock_daily_kline` | 日K线数据 | `stock_code`, `trade_date`, `data_source`, `adjust`（复合唯一），支持 AkShare/Tushare 物理隔离 + 前复权/后复权/不复权共存 |
+| `stock_list` | 股票列表 | `code`(PK), `name`, `market` |
+
+### 策略数据
+
+| 表名 | 说明 | 关键字段 |
+|------|------|---------|
+| `stock_strategy_params` | 策略参数（旧版，向后兼容） | `stock_code`, `strategy_name`, `params`(JSON) |
+| `strategy_param_sets` | 策略参数集（新版，支持多组参数 + PSO 优化结果） | `stock_code`, `strategy_name`, `name`, `params`, `best_score`, `is_default` |
+| `aggregation_schemes` | 策略聚合方案（多策略加权投票） | `strategies`(JSON), `buy_threshold`, `sell_threshold` |
+| `custom_strategies` | 用户自定义策略 | `user_id`, `name`, `code`(Python), `parameter_descriptions` |
+
+### 用户与系统数据
+
+| 表名 | 说明 | 关键字段 |
+|------|------|---------|
+| `users` | 用户（RBAC） | `username`, `hashed_password`, `role`, `is_active` |
+| `audit_logs` | 审计日志 | `username`, `action`, `ip_address`, `created_at` |
+| `watchlist` | 自选股 | `user_id`, `stock_code`, `stock_name` |
+| `data_update_config` | 数据更新配置 | `key`, `value`, `updated_at`（存储数据源、Token、定时任务参数） |
+
+> 📖 完整字段定义、索引及 SQLite/PostgreSQL 差异请参考 [`AGENTS.md`](AGENTS.md#数据库表结构参考)。
 
 ---
 

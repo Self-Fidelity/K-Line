@@ -38,13 +38,17 @@ class Settings:
             "请在 .env 文件或环境变量中设置 SECRET_KEY=<您的密钥>"
         )
     
-    # CORS配置
-    CORS_ORIGINS: list[str] = [
-        "http://localhost:5173",  # Vite默认端口
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ]
+    # CORS配置（支持从环境变量读取，逗号分隔）
+    _cors_env = os.getenv("CORS_ORIGINS", "")
+    if _cors_env:
+        CORS_ORIGINS: list[str] = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
+    else:
+        CORS_ORIGINS: list[str] = [
+            "http://localhost:5173",  # Vite默认端口
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+        ]
     
     # Bokeh Server配置
     BOKEH_SERVER_HOST: str = os.getenv("BOKEH_SERVER_HOST", "localhost")
@@ -72,6 +76,8 @@ class Settings:
     
     # 应用配置
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    # 是否禁用 OpenAPI（生产环境建议禁用）
+    DISABLE_OPENAPI: bool = os.getenv("DISABLE_OPENAPI", "false").lower() == "true"
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # 交易时间

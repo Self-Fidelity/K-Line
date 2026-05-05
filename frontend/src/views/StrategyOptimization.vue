@@ -16,7 +16,7 @@
           <el-form :model="form" label-width="100px" label-position="top">
             <!-- 股票选择（带收藏下拉） -->
             <el-form-item label="股票代码">
-              <div style="display: flex; gap: 5px; align-items: center;">
+              <div class="input-group-flex">
                 <el-dropdown trigger="click" @command="handleFavoriteSelect">
                   <el-button :icon="Collection" circle title="我的收藏" />
                   <template #dropdown>
@@ -415,7 +415,7 @@ import {
   Collection, Star, StarFilled
 } from '@element-plus/icons-vue'
 import { strategyAPI, type StrategyInfo } from '@/api/strategy'
-import { dataAPI } from '@/api/data'
+import { useStockDataStore } from '@/stores/stockData'
 import { paramSetsAPI, type ParamSet } from '@/api/param-sets'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import { useDark } from '@vueuse/core'
@@ -440,7 +440,11 @@ const saving = ref(false)
 const optimizingLogs = ref<string[]>([])
 const realtimeLogsContainer = ref<HTMLElement | null>(null)
 
+let pollIntervalId: number | null = null
+let checkCancelId: number | null = null
+let convergenceChartResizeObserver: ResizeObserver | null = null
 
+const stockDataStore = useStockDataStore()
 
 // 表单
 const form = reactive({
@@ -548,7 +552,7 @@ const searchStocks = async (queryString: string, cb: (results: any[]) => void) =
     return
   }
   try {
-    const response = await dataAPI.getStockList('all')
+    const response = await stockDataStore.getStockList('all')
     const results = response.stocks
       .filter(s => s.code.includes(queryString) || s.name.includes(queryString))
       .slice(0, 10)
@@ -654,7 +658,7 @@ const handleOptimize = async () => {
     optimizingStatusText.value = '任务已提交，正在排队...'
 
     // 2. Poll for progress
-    const pollInterval = window.setInterval(async () => {
+    pollIntervalId = window.setInterval(async () => {
       try {
         const progress = await strategyAPI.getOptimizationProgress(taskId)
         
@@ -679,10 +683,16 @@ const handleOptimize = async () => {
             })
           }
         } else if (progress.status === 'completed') {
-           clearInterval(pollInterval)
+           if (pollIntervalId) clearInterval(pollIntervalId)
+           if (checkCancelId) clearInterval(checkCancelId)
+           pollIntervalId = null
+           checkCancelId = null
            finishOptimization(progress.result)
         } else if (progress.status === 'failed') {
-           clearInterval(pollInterval)
+           if (pollIntervalId) clearInterval(pollIntervalId)
+           if (checkCancelId) clearInterval(checkCancelId)
+           pollIntervalId = null
+           checkCancelId = null
            throw new Error(progress.error || '优化失败')
         }
       } catch (err) {
@@ -691,10 +701,12 @@ const handleOptimize = async () => {
     }, 1000)
     
     // Safety cleanup
-    const checkCancel = window.setInterval(() => {
+    checkCancelId = window.setInterval(() => {
         if (!optimizing.value) {
-            clearInterval(pollInterval)
-            clearInterval(checkCancel)
+            if (pollIntervalId) clearInterval(pollIntervalId)
+            if (checkCancelId) clearInterval(checkCancelId)
+            pollIntervalId = null
+            checkCancelId = null
         }
     }, 1000)
 
@@ -707,6 +719,14 @@ const finishOptimization = (res: any) => {
     if (optimizingTimer.value) {
       clearInterval(optimizingTimer.value)
       optimizingTimer.value = null
+    }
+    if (pollIntervalId) {
+      clearInterval(pollIntervalId)
+      pollIntervalId = null
+    }
+    if (checkCancelId) {
+      clearInterval(checkCancelId)
+      checkCancelId = null
     }
     
     optimizingProgress.value = 100
@@ -730,6 +750,14 @@ const handleError = (e: any) => {
     if (optimizingTimer.value) {
       clearInterval(optimizingTimer.value)
       optimizingTimer.value = null
+    }
+    if (pollIntervalId) {
+      clearInterval(pollIntervalId)
+      pollIntervalId = null
+    }
+    if (checkCancelId) {
+      clearInterval(checkCancelId)
+      checkCancelId = null
     }
     optimizing.value = false
     ElMessage.error(e.message || e.response?.data?.detail || '优化失败')
@@ -983,10 +1011,10 @@ const renderConvergenceChart = (data: number[]) => {
     })
     resizeObserver.observe(chartContainer.value)
     
-    if ((window as any).__convergenceChartResizeObserver) {
-        (window as any).__convergenceChartResizeObserver.disconnect()
+    if (convergenceChartResizeObserver) {
+        convergenceChartResizeObserver.disconnect()
     }
-    ;(window as any).__convergenceChartResizeObserver = resizeObserver
+    convergenceChartResizeObserver = resizeObserver
 }
 
 // Watchers
@@ -1019,9 +1047,21 @@ onUnmounted(() => {
     chart.remove()
     chart = null
   }
-   if ((window as any).__convergenceChartResizeObserver) {
-    (window as any).__convergenceChartResizeObserver.disconnect()
-    ;(window as any).__convergenceChartResizeObserver = null
+  if (optimizingTimer.value) {
+    clearInterval(optimizingTimer.value)
+    optimizingTimer.value = null
+  }
+  if (pollIntervalId) {
+    clearInterval(pollIntervalId)
+    pollIntervalId = null
+  }
+  if (checkCancelId) {
+    clearInterval(checkCancelId)
+    checkCancelId = null
+  }
+  if (convergenceChartResizeObserver) {
+    convergenceChartResizeObserver.disconnect()
+    convergenceChartResizeObserver = null
   }
 })
 
@@ -1504,6 +1544,12 @@ onMounted(async () => {
 }
 
 // 股票、策略选项样式
+.input-group-flex {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
 .stock-code {
   font-weight: bold;
   margin-right: 8px;

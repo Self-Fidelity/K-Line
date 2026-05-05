@@ -45,18 +45,20 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="时间">
-        <el-date-picker
-          v-model="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-          :shortcuts="shortcuts"
-            style="width: 260px"
-          @change="handleDateChange"
-        />
+        <el-form-item label="周期">
+          <el-radio-group v-model="period" size="small" @change="handlePeriodChange">
+            <el-radio-button value="D">日K</el-radio-button>
+            <el-radio-button value="W">周K</el-radio-button>
+            <el-radio-button value="M">月K</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="复权">
+          <el-radio-group v-model="adjust" size="small" @change="handleAdjustChange">
+            <el-radio-button value="qfq">前复权</el-radio-button>
+            <el-radio-button value="hfq">后复权</el-radio-button>
+            <el-radio-button value="none">不复权</el-radio-button>
+          </el-radio-group>
         </el-form-item>
 
         <el-form-item label="主图">
@@ -114,6 +116,13 @@
            <el-icon><Refresh /></el-icon> 刷新
          </el-button>
         </el-form-item>
+
+        <el-form-item label="数据源">
+          <el-radio-group v-model="selectedDataSource" size="small" @change="handleDataSourceChange">
+            <el-radio-button value="akshare">AkShare</el-radio-button>
+            <el-radio-button value="tushare">Tushare</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -130,8 +139,14 @@
           autosize
           :watermark="currentStock?.name"
           :dark-mode="isDark"
+          :loading-more="isLoadingMore"
           @visible-range-change="updateChipRange"
+          @load-more="handleLoadMore"
         />
+        <div v-if="isLoadingMore" class="loading-more-indicator">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>加载历史数据中...</span>
+        </div>
       </div>
 
       <!-- Right Sidebar (Right) -->
@@ -145,7 +160,7 @@
           <div class="stats-panel">
 
         <div class="stat-card">
-          <h4>区间表现 <span class="period" style="font-weight: normal; font-size: 11px; margin-left: 8px;">{{ dateRange?.[0] }} ~ {{ dateRange?.[1] }}</span></h4>
+          <h4>区间表现 <span class="period" style="font-weight: normal; font-size: 11px; margin-left: 8px;">{{ periodLabel }}</span></h4>
           <div class="stat-grid">
             <div class="stat-item">
               <span class="label">区间涨跌幅</span>
@@ -184,12 +199,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Refresh, Close, QuestionFilled, Star, StarFilled, Collection } from '@element-plus/icons-vue';
+import { Refresh, Close, QuestionFilled, Star, StarFilled, Collection, Loading } from '@element-plus/icons-vue';
 import { useDark } from '@vueuse/core';
 import { ElMessage } from 'element-plus';
 
 // ... (imports)
 import { type ChipDistributionData } from '@/plugins/ChipDistributionSeries';
+import { searchStocks } from '@/utils/stockSearch';
 
 // ... (other refs)
 
@@ -218,6 +234,7 @@ import {
     calculateMA, calculateMACD, calculateKDJ, calculateRSI,
     calculateWR, calculateCCI, calculateBIAS, calculateOBV 
 } from '@/utils/indicators';
+import { resampleToWeekly, resampleToMonthly } from '@/utils/resample';
 
 const route = useRoute();
 const isDark = useDark();
@@ -243,8 +260,14 @@ const subIndicators: Record<string, { name: string, desc: string }> = {
 const loading = ref(false);
 const searchQuery = ref('');
 const currentStock = ref<StockInfo | null>(null);
-const dateRange = ref<[string, string]>(['', '']);
 const klineData = ref<ChartData[]>([]);
+const rawKlineData = ref<ChartData[]>([]);
+const period = ref<'D' | 'W' | 'M'>('D');
+const adjust = ref<'qfq' | 'hfq' | 'none'>('qfq');
+const selectedDataSource = ref<'akshare' | 'tushare'>('akshare');
+const isLoadingMore = ref(false);
+const hasMoreHistory = ref(true);
+const hasAutoRefreshed = ref(false);
 
 // Watchlist
 const favorites = ref<WatchlistItem[]>([]);
@@ -275,13 +298,10 @@ const stats = computed(() => {
   return { ...baseStats, maxPrice, minPrice };
 });
 
-// Date Shortcuts
-const shortcuts = [
-  { text: '最近1个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); return [start, end]; } },
-  { text: '最近3个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 3); return [start, end]; } },
-  { text: '最近6个月', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 6); return [start, end]; } },
-  { text: '最近1年', value: () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 12); return [start, end]; } },
-];
+const periodLabel = computed(() => {
+    const map: Record<string, string> = { D: '日K', W: '周K', M: '月K' };
+    return map[period.value] || '日K';
+});
 
 const getValueColor = (val: number) => {
   if (val > 0) return 'text-up';
@@ -293,10 +313,9 @@ const querySearch = async (queryString: string, cb: any) => {
   if (!queryString) return cb([]);
   try {
     const res = await dataAPI.getStockList('all');
-    const results = res.stocks
-      .filter(s => s.code.includes(queryString) || s.name.includes(queryString))
+    const results = searchStocks(res.stocks, queryString)
       .slice(0, 10)
-      .map(s => ({ value: s.code, stock: s }));
+      .map(s => ({ value: `${s.code} ${s.name}`, stock: s }));
     cb(results);
   } catch (e) {
     console.error(e);
@@ -306,11 +325,33 @@ const querySearch = async (queryString: string, cb: any) => {
 
 const handleSelect = (item: any) => {
   currentStock.value = item.stock;
+  hasAutoRefreshed.value = false;
   fetchData();
 };
 
-const handleDateChange = () => {
-  if (currentStock.value) fetchData();
+const applyPeriodAggregation = () => {
+    if (period.value === 'W') {
+        klineData.value = resampleToWeekly(rawKlineData.value);
+    } else if (period.value === 'M') {
+        klineData.value = resampleToMonthly(rawKlineData.value);
+    } else {
+        klineData.value = [...rawKlineData.value];
+    }
+};
+
+const handlePeriodChange = () => {
+    applyPeriodAggregation();
+    updateLines();
+};
+
+const handleAdjustChange = () => {
+    hasAutoRefreshed.value = false;
+    fetchData();
+};
+
+const handleDataSourceChange = () => {
+    hasAutoRefreshed.value = false;
+    fetchData();
 };
 
 const clearMainIndicator = () => {
@@ -392,46 +433,116 @@ const updateLines = () => {
   lines.value = newLines;
 };
 
-const fetchData = async () => {
-  // Try to use searchQuery if currentStock is null or doesn't match
+const fetchData = async (loadMore = false) => {
   let targetCode = currentStock.value?.code;
   
   if (searchQuery.value && (!currentStock.value || currentStock.value.code !== searchQuery.value)) {
-      // Simple validation: 6 digits
       if (/^\d{6}$/.test(searchQuery.value)) {
           targetCode = searchQuery.value;
-          currentStock.value = { code: targetCode, name: targetCode }; // Temporary name
+          currentStock.value = { code: targetCode, name: targetCode };
       }
   }
 
   if (!targetCode) return;
   
-  loading.value = true;
+  if (loadMore) {
+      isLoadingMore.value = true;
+  } else {
+      loading.value = true;
+      hasMoreHistory.value = true;
+  }
+  
   try {
-    const rawData = await dataAPI.getKlineData(
-      targetCode, 
-      dateRange.value?.[0], 
-      dateRange.value?.[1]
-    );
+    let startDate: string | undefined;
+    let endDate: string | undefined;
     
-    klineData.value = rawData.map((item: any) => ({
+    if (!loadMore) {
+      // Initial load: last 1 year
+      const end = new Date();
+      const start = new Date();
+      start.setFullYear(start.getFullYear() - 1);
+      endDate = end.toISOString().split('T')[0];
+      startDate = start.toISOString().split('T')[0];
+    } else {
+      // Load more: 1 year before earliest loaded date
+      if (rawKlineData.value.length === 0) return;
+      const earliest = rawKlineData.value[0].time;
+      const end = new Date(earliest);
+      end.setDate(end.getDate() - 1);
+      const start = new Date(earliest);
+      start.setFullYear(start.getFullYear() - 1);
+      endDate = end.toISOString().split('T')[0];
+      startDate = start.toISOString().split('T')[0];
+    }
+    
+    let rawData = await dataAPI.getKlineData(targetCode, startDate, endDate, adjust.value, selectedDataSource.value);
+    
+    // Auto-detect missing data and re-fetch
+    if (!loadMore && !hasAutoRefreshed.value) {
+      const latestClose = rawData.length > 0 ? rawData[rawData.length - 1].close : 0;
+      const isHighPriceStock = targetCode === '600519'; // 贵州茅台实际价格即超500
+      const looksAdjusted = rawData.length === 0 || (latestClose > 500 && !isHighPriceStock);
+      
+      if (looksAdjusted) {
+        hasAutoRefreshed.value = true;
+        try {
+          ElMessage.info(rawData.length === 0 ? '本地无数据，正在获取...' : '检测到复权数据，正在重新获取实际价格...');
+          await dataAPI.fetchStockData(targetCode, adjust.value, selectedDataSource.value);
+          await new Promise(r => setTimeout(r, 1000)); // Wait for backend to save
+          rawData = await dataAPI.getKlineData(targetCode, startDate, endDate, adjust.value, selectedDataSource.value);
+          if (rawData.length > 0) {
+            ElMessage.success('已更新为实际交易价格');
+          }
+        } catch (refreshErr) {
+          console.error('自动刷新失败', refreshErr);
+        }
+      }
+    }
+    
+    if (rawData.length === 0) {
+      if (loadMore) hasMoreHistory.value = false;
+      return;
+    }
+    
+    const mapped = rawData.map((item: any) => ({
       time: item.date,
       open: item.open,
       high: item.high,
       low: item.low,
       close: item.close,
       volume: item.volume,
+      amount: item.amount,
+      turnover: item.turnover,
       pct_chg: item.pct_chg !== undefined && item.pct_chg !== null ? Number(item.pct_chg) : undefined
     }));
     
+    if (loadMore) {
+      // Prepend and deduplicate
+      const combined = [...mapped, ...rawKlineData.value];
+      const sorted = combined.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      const unique = sorted.filter((item, index, self) =>
+        index === self.findIndex((t) => t.time === item.time)
+      );
+      rawKlineData.value = unique;
+    } else {
+      rawKlineData.value = mapped;
+    }
+    
+    applyPeriodAggregation();
     updateLines();
 
   } catch (e) {
     console.error(e);
-    ElMessage.error('获取数据失败，请检查股票代码是否正确');
+    if (!loadMore) ElMessage.error('获取数据失败，请检查股票代码是否正确');
   } finally {
     loading.value = false;
+    isLoadingMore.value = false;
   }
+};
+
+const handleLoadMore = async () => {
+  if (isLoadingMore.value || !hasMoreHistory.value) return;
+  await fetchData(true);
 };
 
 // --- Watchlist Logic ---
@@ -463,6 +574,7 @@ const toggleFavorite = async () => {
 const handleFavoriteSelect = (fav: WatchlistItem) => {
     searchQuery.value = fav.stock_code;
     currentStock.value = { code: fav.stock_code, name: fav.stock_name || fav.stock_code }; 
+    hasAutoRefreshed.value = false;
     fetchData();
 };
 
@@ -735,21 +847,24 @@ const handleResize = () => {
 window.addEventListener('resize', handleResize);
 
 
+const loadDataSourceConfig = async () => {
+  try {
+    const config = await dataAPI.getCurrentDataSource();
+    selectedDataSource.value = config.data_source as 'akshare' | 'tushare';
+  } catch (error: any) {
+    console.error('加载数据源配置失败:', error);
+  }
+};
+
 onMounted(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setMonth(start.getMonth() - 6);
-    dateRange.value = [
-        start.toISOString().split('T')[0],
-        end.toISOString().split('T')[0]
-    ];
-    
     loadFavorites();
+    loadDataSourceConfig();
 
     const { stock, name } = route.query;
     if (stock) {
         currentStock.value = { code: stock as string, name: name as string || 'Unknown' };
         searchQuery.value = stock as string;
+        hasAutoRefreshed.value = false;
         fetchData();
         // CYQ will be loaded by watch
     }
@@ -929,4 +1044,20 @@ onMounted(() => {
 
 .text-up { color: #f56c6c; }
 .text-down { color: #67c23a; }
+
+.loading-more-indicator {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 10;
+}
 </style>

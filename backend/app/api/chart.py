@@ -75,7 +75,7 @@ async def generate_chart(
         
         # 生成chart_id（使用文件路径的hash）
         import hashlib
-        chart_id = hashlib.md5(str(html_path).encode()).hexdigest()
+        chart_id = hashlib.sha256(str(html_path).encode()).hexdigest()
         
         # 获取图表URL（使用文件名，通过静态文件服务访问）
         from pathlib import Path

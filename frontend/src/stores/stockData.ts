@@ -58,7 +58,7 @@ export const useStockDataStore = defineStore('stockData', () => {
   /**
    * 管理员刷新股票列表（强制从 API 拉取）
    */
-  async function refreshStockList(market = 'main'): Promise<StockListCache> {
+  async function refreshStockList(market = 'main', dataSource?: string): Promise<StockListCache> {
     loading.value = true
     try {
       const response = await dataAPI.refreshStockList(market)
@@ -67,7 +67,8 @@ export const useStockDataStore = defineStore('stockData', () => {
         total: response.total,
         fetchedAt: Date.now(),
       }
-      cache.value[market] = entry
+      const cacheKey = dataSource ? `${market}:${dataSource}` : market
+      cache.value[cacheKey] = entry
       return entry
     } finally {
       loading.value = false

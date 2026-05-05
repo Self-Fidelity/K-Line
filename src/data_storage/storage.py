@@ -14,6 +14,7 @@ class DataStorage(ABC):
         data: pd.DataFrame,
         stock_code: str,
         data_source: str = "akshare",
+        adjust: str = "qfq",
     ) -> bool:
         """
         保存日K线数据
@@ -22,6 +23,7 @@ class DataStorage(ABC):
             data: 日K线数据 DataFrame
             stock_code: 股票代码
             data_source: 数据来源，'akshare' 或 'tushare'
+            adjust: 复权方式，'qfq'（前复权）、'hfq'（后复权）、'none'（不复权）
         
         Returns:
             是否保存成功
@@ -35,6 +37,7 @@ class DataStorage(ABC):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         data_source: Optional[str] = None,
+        adjust: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         获取日K线数据
@@ -44,6 +47,7 @@ class DataStorage(ABC):
             start_date: 开始日期（格式：'20240101'）
             end_date: 结束日期（格式：'20240101'）
             data_source: 数据来源过滤，None 则返回所有来源
+            adjust: 复权方式过滤，None 则返回所有复权方式
         
         Returns:
             日K线数据 DataFrame
@@ -51,13 +55,14 @@ class DataStorage(ABC):
         pass
     
     @abstractmethod
-    def get_latest_date(self, stock_code: str, data_source: Optional[str] = None) -> Optional[str]:
+    def get_latest_date(self, stock_code: str, data_source: Optional[str] = None, adjust: Optional[str] = None) -> Optional[str]:
         """
         获取指定股票的最新数据日期
         
         Args:
             stock_code: 股票代码
             data_source: 数据来源过滤，None 则查询所有来源
+            adjust: 复权方式过滤，None 则查询所有复权方式
         
         Returns:
             最新日期字符串（格式：'20240101'），如果没有数据返回 None
@@ -69,7 +74,8 @@ class DataStorage(ABC):
         self,
         stock_code: str,
         trade_date: str,
-        data_source: str = "akshare",
+        data_source: Optional[str] = None,
+        adjust: Optional[str] = None,
     ) -> bool:
         """
         检查指定日期的数据是否存在
@@ -77,7 +83,8 @@ class DataStorage(ABC):
         Args:
             stock_code: 股票代码
             trade_date: 交易日期（格式：'20240101'）
-            data_source: 数据来源
+            data_source: 数据来源过滤，None 则查询所有来源
+            adjust: 复权方式过滤，None 则查询所有复权方式
         
         Returns:
             如果数据存在返回 True，否则返回 False
@@ -85,12 +92,13 @@ class DataStorage(ABC):
         pass
     
     @abstractmethod
-    def get_all_stocks(self, data_source: Optional[str] = None) -> list[str]:
+    def get_all_stocks(self, data_source: Optional[str] = None, adjust: Optional[str] = None) -> list[str]:
         """
         获取数据库中所有股票代码列表
         
         Args:
             data_source: 数据来源过滤，None 则返回所有来源
+            adjust: 复权方式过滤，None 则返回所有复权方式
         
         Returns:
             股票代码列表
@@ -229,4 +237,153 @@ class DataStorage(ABC):
     @abstractmethod
     def set_update_config(self, key: str, value: str) -> None:
         """设置更新配置值"""
+        pass
+
+    # ───────────────────── 策略参数 ─────────────────────
+
+    @abstractmethod
+    def save_strategy_params(self, stock_code: str, strategy_name: str, params: str) -> bool:
+        """保存策略参数"""
+        pass
+
+    @abstractmethod
+    def get_strategy_params(self, stock_code: str, strategy_name: str) -> Optional[str]:
+        """获取策略参数"""
+        pass
+
+    # ───────────────────── 参数集管理 ─────────────────────
+
+    @abstractmethod
+    def save_param_set(
+        self,
+        stock_code: str,
+        strategy_name: str,
+        name: str,
+        params: Dict[str, Any],
+        description: str = "",
+        param_ranges: Optional[Dict[str, List[float]]] = None,
+        target_metric: Optional[str] = None,
+        best_score: Optional[float] = None,
+        optimization_method: Optional[str] = None,
+        num_particles: Optional[int] = None,
+        max_iter: Optional[int] = None,
+        date_range: Optional[str] = None,
+        is_default: bool = False,
+    ) -> Optional[int]:
+        """保存参数集"""
+        pass
+
+    @abstractmethod
+    def get_param_sets(self, stock_code: str, strategy_name: str) -> List[Dict[str, Any]]:
+        """获取参数集列表"""
+        pass
+
+    @abstractmethod
+    def get_param_set_by_id(self, param_set_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取参数集"""
+        pass
+
+    @abstractmethod
+    def delete_param_set(self, param_set_id: int) -> bool:
+        """删除参数集"""
+        pass
+
+    @abstractmethod
+    def set_default_param_set(self, param_set_id: int, stock_code: str, strategy_name: str) -> bool:
+        """设置默认参数集"""
+        pass
+
+    @abstractmethod
+    def get_default_param_set(self, stock_code: str, strategy_name: str) -> Optional[Dict[str, Any]]:
+        """获取默认参数集"""
+        pass
+
+    # ───────────────────── 策略聚合方案 ─────────────────────
+
+    @abstractmethod
+    def save_aggregation_scheme(
+        self,
+        name: str,
+        strategies: List[Dict[str, Any]],
+        buy_threshold: float,
+        sell_threshold: float,
+        required_strategies: List[str],
+        description: str = "",
+        stock_code: Optional[str] = None,
+    ) -> Optional[int]:
+        """保存策略聚合方案"""
+        pass
+
+    @abstractmethod
+    def get_aggregation_schemes(self, stock_code: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取策略聚合方案列表"""
+        pass
+
+    @abstractmethod
+    def get_aggregation_scheme_by_id(self, scheme_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取聚合方案"""
+        pass
+
+    @abstractmethod
+    def delete_aggregation_scheme(self, scheme_id: int) -> bool:
+        """删除策略聚合方案"""
+        pass
+
+    # ───────────────────── 自定义策略 ─────────────────────
+
+    @abstractmethod
+    def create_custom_strategy(
+        self,
+        user_id: int,
+        name: str,
+        code: str,
+        description: str = "",
+        detailed_description: str = "",
+        parameter_descriptions: Optional[Dict[str, str]] = None,
+        file_path: Optional[str] = None,
+        is_public: bool = False,
+    ) -> int:
+        """创建自定义策略，返回策略ID"""
+        pass
+
+    @abstractmethod
+    def get_custom_strategy(self, strategy_id: int) -> Optional[Dict[str, Any]]:
+        """获取单个自定义策略"""
+        pass
+
+    @abstractmethod
+    def get_custom_strategy_by_user(self, strategy_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+        """获取用户拥有的策略"""
+        pass
+
+    @abstractmethod
+    def update_custom_strategy(self, strategy_id: int, **fields: Any) -> bool:
+        """更新自定义策略字段"""
+        pass
+
+    @abstractmethod
+    def delete_custom_strategy(self, strategy_id: int) -> bool:
+        """删除自定义策略"""
+        pass
+
+    @abstractmethod
+    def list_custom_strategies(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """列出所有自定义策略"""
+        pass
+
+    # ───────────────────── 工具方法 ─────────────────────
+
+    @abstractmethod
+    def get_all_latest_dates(self, data_source: Optional[str] = None) -> Dict[str, Optional[str]]:
+        """批量获取所有股票的最新数据日期"""
+        pass
+
+    @abstractmethod
+    def close(self) -> None:
+        """关闭存储连接"""
+        pass
+
+    @abstractmethod
+    def health_check(self) -> bool:
+        """健康检查"""
         pass

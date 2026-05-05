@@ -19,6 +19,7 @@
     "element-plus": "^2.4.0",
     "lightweight-charts": "^5.1.0",
     "pinia": "^2.1.0",
+    "pinyin-pro": "^3.28.1",
     "vue": "^3.3.0",
     "vue-router": "^4.2.0"
   },

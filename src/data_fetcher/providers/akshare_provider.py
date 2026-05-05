@@ -8,6 +8,7 @@ import pandas as pd
 from src.utils.logger import get_logger
 from src.config import settings
 from src.utils.akshare_config import ensure_akshare_configured
+from src.data_fetcher.providers.base import BaseDataProvider
 
 # 确保 akshare 已配置
 ensure_akshare_configured()
@@ -16,7 +17,7 @@ import akshare as ak
 logger = get_logger(__name__)
 
 
-class AkShareProvider:
+class AkShareProvider(BaseDataProvider):
     """AkShare 数据获取 Provider
     
     批量优化说明：
@@ -110,7 +111,7 @@ class AkShareProvider:
         stock_code: str,
         start_date: str = "",
         end_date: str = "",
-        adjust: str = "hfq",
+        adjust: str = "qfq",
     ) -> pd.DataFrame:
         """获取单只股票的日K线数据"""
         logger.debug(f"[AkShare] 获取股票 {stock_code} 的日K线数据，日期范围: {start_date} ~ {end_date}")
@@ -129,6 +130,9 @@ class AkShareProvider:
                 
                 if adjust == "hfq":
                     params["adjust"] = "hfq"
+                    df = ak.stock_zh_a_hist(**params)
+                elif adjust == "qfq":
+                    params["adjust"] = "qfq"
                     df = ak.stock_zh_a_hist(**params)
                 else:
                     params["adjust"] = ""

@@ -84,7 +84,7 @@
         </el-form-item>
 
         <el-form-item label="股票" required>
-          <div style="display: flex; gap: 5px; align-items: center;">
+          <div class="input-group-flex">
             <el-dropdown trigger="click" @command="handleFavoriteSelect">
               <el-button :icon="Collection" circle title="我的收藏" />
               <template #dropdown>
@@ -382,7 +382,7 @@
               :darkMode="isDark"
               :showSubChart="false"
               :simpleLegend="true"
-              :key="`kline-${compareResult.stock_code}-${Date.now()}`"
+              :key="`kline-${compareResult.stock_code}`"
             />
             <!-- 策略信号图例 -->
             <div class="marker-legend" v-if="combinedMarkers.length > 0">
@@ -416,7 +416,7 @@
               :darkMode="isDark"
               :showSubChart="false"
               :simpleLegend="true"
-              :key="`equity-${compareResult.stock_code}-${Date.now()}`"
+              :key="`equity-${compareResult.stock_code}`"
             />
           </div>
         </el-tab-pane>
@@ -444,12 +444,14 @@ import { Search, Trophy, Download, Collection, Star, StarFilled, Setting, DataAn
 import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyCompareRequest, type StrategyCompareResponse } from '@/api/strategy'
 import { dataAPI } from '@/api/data'
+import { useStockDataStore } from '@/stores/stockData'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import { paramSetsAPI, type ParamSet } from '@/api/param-sets'
 import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
 
 const router = useRouter()
 const isDark = useDark()
+const stockDataStore = useStockDataStore()
 
 const strategies = ref<StrategyInfo[]>([])
 const comparing = ref(false)
@@ -662,7 +664,7 @@ const searchStocks = async (queryString: string, cb: (results: any[]) => void) =
   }
 
   try {
-    const response = await dataAPI.getStockList('all')
+    const response = await stockDataStore.getStockList('all')
     const results = response.stocks
       .filter(
         (stock) =>
@@ -1315,6 +1317,12 @@ onMounted(() => {
 
 .control-form :deep(.el-form-item__content) {
   line-height: 32px;
+}
+
+.input-group-flex {
+  display: flex;
+  gap: 5px;
+  align-items: center;
 }
 
 .card-header {

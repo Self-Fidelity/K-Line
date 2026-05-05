@@ -17,7 +17,7 @@
       </template>
 
       <!-- 搜索栏 -->
-      <el-row :gutter="20" class="search-row">
+      <el-row :gutter="20" class="search-row" align="middle">
         <el-col :xs="24" :sm="12" :md="8">
           <el-input
             v-model="searchKeyword"
@@ -41,6 +41,15 @@
             <el-option label="创业板" value="cyb" />
             <el-option label="科创板" value="kcb" />
           </el-select>
+        </el-col>
+        <el-col :xs="24" :sm="12" :md="10" style="text-align: right;">
+          <el-radio-group v-model="selectedDataSource" size="small" @change="handleDataSourceChange">
+            <el-radio-button value="akshare">AkShare</el-radio-button>
+            <el-radio-button value="tushare">Tushare Pro</el-radio-button>
+          </el-radio-group>
+          <el-tag :type="selectedDataSource === 'tushare' ? 'success' : 'primary'" size="small" style="margin-left: 8px;">
+            当前数据源: {{ selectedDataSource === 'tushare' ? 'Tushare Pro' : 'AkShare' }}
+          </el-tag>
         </el-col>
       </el-row>
 
@@ -128,6 +137,8 @@ import { dataAPI, type StockInfo } from '@/api/data'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import { useAuthStore } from '@/stores/auth'
 import { useStockDataStore } from '@/stores/stockData'
+import { dataUpdateAPI } from '@/api/dataUpdate'
+import { matchStock } from '@/utils/stockSearch'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -145,6 +156,7 @@ const pageSize = ref(50)
 
 const fetchDialogVisible = ref(false)
 const selectedStock = ref<StockInfo | null>(null)
+const selectedDataSource = ref<'akshare' | 'tushare'>('akshare')
 
 // Watchlist Map for quick lookup
 const favoritesMap = ref<Record<string, boolean>>({})
@@ -184,13 +196,9 @@ const totalStocks = computed(() => {
   // 计算过滤后的总数（考虑搜索和市场过滤）
   let result = stocks.value
 
-  // 搜索过滤
+  // 搜索过滤（支持代码、名称、拼音首字母）
   if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(
-      (stock) =>
-        stock.code.toLowerCase().includes(keyword) || stock.name.toLowerCase().includes(keyword)
-    )
+    result = result.filter((stock) => matchStock(stock, searchKeyword.value))
   }
 
   // 市场过滤
@@ -204,13 +212,9 @@ const totalStocks = computed(() => {
 const filteredStocks = computed(() => {
   let result = stocks.value
 
-  // 搜索过滤
+  // 搜索过滤（支持代码、名称、拼音首字母）
   if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(
-      (stock) =>
-        stock.code.toLowerCase().includes(keyword) || stock.name.toLowerCase().includes(keyword)
-    )
+    result = result.filter((stock) => matchStock(stock, searchKeyword.value))
   }
 
   // 市场过滤
@@ -232,7 +236,7 @@ const isAdmin = computed(() => {
 const loadStockList = async () => {
   loading.value = true
   try {
-    const result = await stockDataStore.getStockList(selectedMarket.value)
+    const result = await stockDataStore.getStockList(selectedMarket.value, selectedDataSource.value)
     stocks.value = result.stocks
     currentPage.value = 1
     if (result.total > 0) {
@@ -251,7 +255,7 @@ const loadStockList = async () => {
 const handleRefresh = async () => {
   refreshing.value = true
   try {
-    const result = await stockDataStore.refreshStockList(selectedMarket.value)
+    const result = await stockDataStore.refreshStockList(selectedMarket.value, selectedDataSource.value)
     stocks.value = result.stocks
     currentPage.value = 1
     ElMessage.success(`已从 API 刷新股票列表，共 ${result.total} 只股票`)
@@ -301,7 +305,7 @@ const handleConfirmFetch = async () => {
 
   fetching.value = true
   try {
-    const response = await dataAPI.fetchStockData(selectedStock.value.code)
+    const response = await dataAPI.fetchStockData(selectedStock.value.code, 'qfq', selectedDataSource.value)
     ElMessage.success(response.message || '数据获取成功')
     fetchDialogVisible.value = false
     // 刷新股票列表（更新最新数据日期）
@@ -314,6 +318,19 @@ const handleConfirmFetch = async () => {
   }
 }
 
+const loadDataSourceConfig = async () => {
+  try {
+    const config = await dataAPI.getCurrentDataSource()
+    selectedDataSource.value = config.data_source as 'akshare' | 'tushare'
+  } catch (error: any) {
+    console.error('加载数据源配置失败:', error)
+  }
+}
+
+const handleDataSourceChange = () => {
+  loadStockList()
+}
+
 const formatVolume = (volume: number): string => {
   if (volume >= 100000000) {
     return (volume / 100000000).toFixed(2) + '亿'
@@ -324,6 +341,7 @@ const formatVolume = (volume: number): string => {
 }
 
 onMounted(() => {
+  loadDataSourceConfig()
   loadStockList()
   loadFavorites()
 })

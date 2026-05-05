@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Optional
 import pandas as pd
-from bokeh.plotting import figure, output_file, save
-from bokeh.models import ColumnDataSource, HoverTool, RangeTool, LabelSet, Label, Div, Range1d
+from bokeh.plotting import figure, save
+from bokeh.models import ColumnDataSource, HoverTool, LabelSet, Div
 from bokeh.layouts import column, row
 from bokeh.io import export_png
 
@@ -50,6 +50,74 @@ class KLineChart:
         Returns:
             保存的HTML文件路径
         """
+        return self._build_base_chart(
+            data=data,
+            stock_code=stock_code,
+            stock_name=stock_name,
+            save_path=save_path,
+            strategy_result=strategy_result,
+            statistics=statistics,
+            ma_periods=None,
+        )
+    
+    def plot_with_ma(
+        self,
+        data: pd.DataFrame,
+        stock_code: Optional[str] = None,
+        stock_name: Optional[str] = None,
+        ma_periods: list[int] = [5, 10, 20, 30],
+        save_path: Optional[Path] = None,
+        strategy_result: Optional[pd.DataFrame] = None,
+        statistics: Optional[dict] = None,
+    ) -> str:
+        """
+        绘制带均线的K线图
+        
+        Args:
+            data: 股票数据 DataFrame
+            stock_code: 股票代码
+            stock_name: 股票名称
+            ma_periods: 均线周期列表
+            save_path: 保存路径
+        
+        Returns:
+            保存的HTML文件路径
+        """
+        return self._build_base_chart(
+            data=data,
+            stock_code=stock_code,
+            stock_name=stock_name,
+            save_path=save_path,
+            strategy_result=strategy_result,
+            statistics=statistics,
+            ma_periods=ma_periods,
+        )
+    
+    def _build_base_chart(
+        self,
+        data: pd.DataFrame,
+        stock_code: Optional[str] = None,
+        stock_name: Optional[str] = None,
+        save_path: Optional[Path] = None,
+        strategy_result: Optional[pd.DataFrame] = None,
+        statistics: Optional[dict] = None,
+        ma_periods: Optional[list[int]] = None,
+    ) -> str:
+        """
+        构建K线图核心逻辑（私有辅助方法）
+        
+        Args:
+            data: 股票数据 DataFrame
+            stock_code: 股票代码
+            stock_name: 股票名称
+            save_path: 保存路径
+            strategy_result: 策略分析结果 DataFrame
+            statistics: 统计结果字典
+            ma_periods: 均线周期列表，为 None 时不绘制均线
+        
+        Returns:
+            保存的HTML文件路径
+        """
         # 验证数据
         required_columns = ["date", "open", "close", "high", "low", "volume"]
         if not all(col in data.columns for col in required_columns):
@@ -60,21 +128,23 @@ class KLineChart:
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         
+        # 计算均线
+        if ma_periods:
+            for period in ma_periods:
+                df[f"MA{period}"] = df["close"].rolling(window=period).mean()
+        
         # 生成输出路径
         if not save_path:
-            date_suffix = ""
             start_date = df["date"].min().strftime("%Y%m%d")
             end_date = df["date"].max().strftime("%Y%m%d")
             date_suffix = f"_{start_date}_{end_date}"
+            suffix = "_kline_ma" if ma_periods else "_kline"
             
             settings.CHART_DIR.mkdir(parents=True, exist_ok=True)
-            save_path = settings.CHART_DIR / f"{stock_code or 'stock'}_kline{date_suffix}.html"
+            save_path = settings.CHART_DIR / f"{stock_code or 'stock'}{suffix}{date_suffix}.html"
         
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 设置输出文件
-        output_file(str(save_path))
         
         # 准备数据源（使用索引作为x轴，消除非交易日空缺）
         df = df.reset_index(drop=True)
@@ -87,7 +157,12 @@ class KLineChart:
         source = ColumnDataSource(df)
         
         # 创建主图（K线图）- 使用索引作为x轴
-        title = f"{stock_name or ''} ({stock_code or ''}) K线图" if stock_code or stock_name else "K线图"
+        ma_suffix = "（带均线）" if ma_periods else ""
+        if stock_code or stock_name:
+            title = f"{stock_name or ''} ({stock_code or ''}) K线图{ma_suffix}"
+        else:
+            title = f"K线图{ma_suffix}"
+        
         p1 = figure(
             width=self.width,
             height=int(self.height * 0.7),
@@ -95,6 +170,23 @@ class KLineChart:
             tools="pan,wheel_zoom,box_zoom,reset,save",
             toolbar_location="above",
         )
+        
+        # 绘制均线（使用索引作为x轴）
+        if ma_periods:
+            colors = ["blue", "orange", "purple", "brown", "pink", "gray"]
+            for i, period in enumerate(ma_periods):
+                ma_col = f"MA{period}"
+                if ma_col in df.columns:
+                    color = colors[i % len(colors)]
+                    p1.line(
+                        x="index",
+                        y=ma_col,
+                        source=source,
+                        legend_label=f"MA{period}",
+                        line_width=2,
+                        color=color,
+                        alpha=0.8,
+                    )
         
         # 绘制K线（使用索引作为x轴）
         # 绘制上下影线
@@ -121,33 +213,22 @@ class KLineChart:
         )
         
         # 添加悬停工具
-        hover = HoverTool(
-            tooltips=[
-                ("日期", "@date_str"),
-                ("开盘", "@open{0.2f}"),
-                ("收盘", "@close{0.2f}"),
-                ("最高", "@high{0.2f}"),
-                ("最低", "@low{0.2f}"),
-                ("成交量", "@volume{0,0}"),
-            ]
-        )
+        tooltips = [
+            ("日期", "@date_str"),
+            ("开盘", "@open{0.2f}"),
+            ("收盘", "@close{0.2f}"),
+            ("最高", "@high{0.2f}"),
+            ("最低", "@low{0.2f}"),
+            ("成交量", "@volume{0,0}"),
+        ]
+        if ma_periods:
+            tooltips.extend([
+                (f"MA{period}", f"@MA{period}{{0.2f}}")
+                for period in ma_periods
+                if f"MA{period}" in df.columns
+            ])
+        hover = HoverTool(tooltips=tooltips)
         p1.add_tools(hover)
-        
-        # 设置x轴标签（显示日期）
-        # 选择部分日期作为标签，避免过于密集
-        num_labels = min(20, len(df))  # 最多显示20个标签
-        step = max(1, len(df) // num_labels)
-        tick_positions = list(range(0, len(df), step))
-        tick_labels = [df.iloc[i]["date_str"] for i in tick_positions]
-        
-        p1.xaxis.ticker = tick_positions
-        p1.xaxis.major_label_overrides = {pos: label for pos, label in zip(tick_positions, tick_labels)}
-        p1.xaxis.major_label_orientation = 45  # 标签旋转45度
-        
-        # 设置标签
-        p1.xaxis.axis_label = "日期"
-        p1.yaxis.axis_label = "价格"
-        p1.grid.grid_line_alpha = 0.3
         
         # 如果有策略结果，添加买卖信号标记
         if strategy_result is not None and not strategy_result.empty:
@@ -210,6 +291,25 @@ class KLineChart:
                     )
                     p1.add_layout(labels_sell)
         
+        # 设置x轴标签（显示日期）
+        # 选择部分日期作为标签，避免过于密集
+        num_labels = min(20, len(df))  # 最多显示20个标签
+        step = max(1, len(df) // num_labels)
+        tick_positions = list(range(0, len(df), step))
+        tick_labels = [df.iloc[i]["date_str"] for i in tick_positions]
+        
+        p1.xaxis.ticker = tick_positions
+        p1.xaxis.major_label_overrides = {pos: label for pos, label in zip(tick_positions, tick_labels)}
+        p1.xaxis.major_label_orientation = 45  # 标签旋转45度
+        
+        # 设置标签
+        p1.xaxis.axis_label = "日期"
+        p1.yaxis.axis_label = "价格"
+        p1.grid.grid_line_alpha = 0.3
+        
+        if ma_periods:
+            p1.legend.location = "top_left"
+        
         # 创建成交量图（使用索引作为x轴）
         p2 = figure(
             width=self.width,
@@ -250,9 +350,10 @@ class KLineChart:
         else:
             chart = column(p1, p2)
         
-        # 保存
-        save(chart)
-        logger.info(f"K线图已保存到: {save_path}")
+        # 保存（不使用全局 output_file，避免线程污染）
+        save(chart, filename=str(save_path), title=title)
+        type_str = "（带均线）" if ma_periods else ""
+        logger.info(f"K线图{type_str}已保存到: {save_path}")
         
         return str(save_path)
     
@@ -336,256 +437,3 @@ class KLineChart:
         """
         
         return html
-    
-    def plot_with_ma(
-        self,
-        data: pd.DataFrame,
-        stock_code: Optional[str] = None,
-        stock_name: Optional[str] = None,
-        ma_periods: list[int] = [5, 10, 20, 30],
-        save_path: Optional[Path] = None,
-        strategy_result: Optional[pd.DataFrame] = None,
-        statistics: Optional[dict] = None,
-    ) -> str:
-        """
-        绘制带均线的K线图
-        
-        Args:
-            data: 股票数据 DataFrame
-            stock_code: 股票代码
-            stock_name: 股票名称
-            ma_periods: 均线周期列表
-            save_path: 保存路径
-        
-        Returns:
-            保存的HTML文件路径
-        """
-        # 计算均线
-        df = data.copy()
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date").reset_index(drop=True)
-        
-        for period in ma_periods:
-            df[f"MA{period}"] = df["close"].rolling(window=period).mean()
-        
-        # 生成输出路径
-        if not save_path:
-            date_suffix = ""
-            start_date = df["date"].min().strftime("%Y%m%d")
-            end_date = df["date"].max().strftime("%Y%m%d")
-            date_suffix = f"_{start_date}_{end_date}"
-            
-            settings.CHART_DIR.mkdir(parents=True, exist_ok=True)
-            save_path = settings.CHART_DIR / f"{stock_code or 'stock'}_kline_ma{date_suffix}.html"
-        
-        save_path = Path(save_path)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 设置输出文件
-        output_file(str(save_path))
-        
-        # 准备数据源（使用索引作为x轴，消除非交易日空缺）
-        df = df.reset_index(drop=True)
-        df["index"] = df.index
-        df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
-        df["color"] = df.apply(lambda row: "red" if row["close"] >= row["open"] else "green", axis=1)
-        df["mid"] = (df["open"] + df["close"]) / 2
-        df["height"] = abs(df["close"] - df["open"])
-        
-        source = ColumnDataSource(df)
-        
-        # 创建主图（使用索引作为x轴）
-        title = f"{stock_name or ''} ({stock_code or ''}) K线图（带均线）" if stock_code or stock_name else "K线图（带均线）"
-        p1 = figure(
-            width=self.width,
-            height=int(self.height * 0.7),
-            title=title,
-            tools="pan,wheel_zoom,box_zoom,reset,save",
-            toolbar_location="above",
-        )
-        
-        # 绘制均线（使用索引作为x轴）
-        colors = ["blue", "orange", "purple", "brown", "pink", "gray"]
-        for i, period in enumerate(ma_periods):
-            ma_col = f"MA{period}"
-            if ma_col in df.columns:
-                color = colors[i % len(colors)]
-                p1.line(
-                    x="index",
-                    y=ma_col,
-                    source=source,
-                    legend_label=f"MA{period}",
-                    line_width=2,
-                    color=color,
-                    alpha=0.8,
-                )
-        
-        # 绘制K线（使用索引作为x轴）
-        p1.segment(
-            x0="index",
-            y0="low",
-            x1="index",
-            y1="high",
-            source=source,
-            color="color",
-            line_width=1,
-        )
-        
-        p1.rect(
-            x="index",
-            y="mid",
-            width=0.6,
-            height="height",
-            source=source,
-            fill_color="color",
-            line_color="color",
-            alpha=0.8,
-        )
-        
-        # 添加悬停工具
-        hover = HoverTool(
-            tooltips=[
-                ("日期", "@date_str"),
-                ("开盘", "@open{0.2f}"),
-                ("收盘", "@close{0.2f}"),
-                ("最高", "@high{0.2f}"),
-                ("最低", "@low{0.2f}"),
-                ("成交量", "@volume{0,0}"),
-            ] + [(f"MA{period}", f"@MA{period}{{0.2f}}") for period in ma_periods if f"MA{period}" in df.columns]
-        )
-        p1.add_tools(hover)
-        
-        # 如果有策略结果，添加买卖信号标记
-        if strategy_result is not None and not strategy_result.empty:
-            # 确保策略结果的date列是datetime类型
-            strategy_result = strategy_result.copy()
-            strategy_result["date"] = pd.to_datetime(strategy_result["date"])
-            
-            # 合并策略结果和数据
-            signal_df = pd.merge(
-                df[["index", "date", "close"]],
-                strategy_result[["date", "signal", "signal_type"]],
-                on="date",
-                how="inner",
-            )
-            
-            if not signal_df.empty:
-                # 买入信号（标注B，红底白字）
-                buy_signals = signal_df[signal_df["signal"] == 1].copy()
-                if not buy_signals.empty:
-                    # 合并数据获取high价格
-                    buy_signals = pd.merge(
-                        buy_signals[["index", "date", "signal"]],
-                        df[["index", "high"]],
-                        on="index",
-                        how="left",
-                    )
-                    # 标签位置：在最高价上方2%
-                    buy_signals["label_y"] = buy_signals["high"] * 1.02
-                    buy_signals["label_text"] = "B"
-                    buy_source = ColumnDataSource(buy_signals)
-                    # 绘制标签（红底白字）
-                    labels_buy = LabelSet(
-                        x="index",
-                        y="label_y",
-                        text="label_text",
-                        source=buy_source,
-                        text_font_size="12pt",
-                        text_color="white",
-                        text_font_style="bold",
-                        y_offset=8,
-                        x_offset=0,
-                        background_fill_color="red",
-                        background_fill_alpha=0.3,
-                    )
-                    p1.add_layout(labels_buy)
-                
-                # 卖出信号（标注S，蓝底白字）
-                sell_signals = signal_df[signal_df["signal"] == -1].copy()
-                if not sell_signals.empty:
-                    # 合并数据获取high价格
-                    sell_signals = pd.merge(
-                        sell_signals[["index", "date", "signal"]],
-                        df[["index", "high"]],
-                        on="index",
-                        how="left",
-                    )
-                    # 标签位置：在最高价上方2%
-                    sell_signals["label_y"] = sell_signals["high"] * 1.02
-                    sell_signals["label_text"] = "S"
-                    sell_source = ColumnDataSource(sell_signals)
-                    # 绘制标签（蓝底白字）
-                    labels_sell = LabelSet(
-                        x="index",
-                        y="label_y",
-                        text="label_text",
-                        source=sell_source,
-                        text_font_size="12pt",
-                        text_color="white",
-                        text_font_style="bold",
-                        y_offset=8,
-                        x_offset=0,
-                        background_fill_color="blue",
-                        background_fill_alpha=0.3,
-                    )
-                    p1.add_layout(labels_sell)
-        
-        # 设置x轴标签（显示日期）
-        num_labels = min(20, len(df))  # 最多显示20个标签
-        step = max(1, len(df) // num_labels)
-        tick_positions = list(range(0, len(df), step))
-        tick_labels = [df.iloc[i]["date_str"] for i in tick_positions]
-        
-        p1.xaxis.ticker = tick_positions
-        p1.xaxis.major_label_overrides = {pos: label for pos, label in zip(tick_positions, tick_labels)}
-        p1.xaxis.major_label_orientation = 45  # 标签旋转45度
-        
-        p1.legend.location = "top_left"
-        p1.xaxis.axis_label = "日期"
-        p1.yaxis.axis_label = "价格"
-        p1.grid.grid_line_alpha = 0.3
-        
-        # 创建成交量图（使用索引作为x轴）
-        p2 = figure(
-            width=self.width,
-            height=int(self.height * 0.3),
-            x_range=p1.x_range,
-            tools="pan,wheel_zoom,box_zoom,reset",
-            toolbar_location=None,
-        )
-        
-        p2.vbar(
-            x="index",
-            top="volume",
-            width=0.6,
-            source=source,
-            fill_color="color",
-            line_color="color",
-            alpha=0.6,
-        )
-        
-        # 设置x轴标签（与主图保持一致）
-        p2.xaxis.ticker = tick_positions
-        p2.xaxis.major_label_overrides = {pos: label for pos, label in zip(tick_positions, tick_labels)}
-        p2.xaxis.major_label_orientation = 45
-        
-        p2.xaxis.axis_label = "日期"
-        p2.yaxis.axis_label = "成交量"
-        p2.grid.grid_line_alpha = 0.3
-        
-        # 组合图表
-        if statistics:
-            # 如果有统计结果，在右侧添加统计面板
-            stats_html = self._format_statistics_html(statistics)
-            chart_height = int(self.height * 0.95)
-            stats_div = Div(text=stats_html, width=300, height=chart_height, sizing_mode="fixed")
-            chart_col = column(p1, p2, sizing_mode="fixed")
-            chart = row([chart_col, stats_div], sizing_mode="fixed", width=self.width + 300)
-        else:
-            chart = column(p1, p2)
-        
-        # 保存
-        save(chart)
-        logger.info(f"K线图（带均线）已保存到: {save_path}")
-        
-        return str(save_path)

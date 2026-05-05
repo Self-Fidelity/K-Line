@@ -22,6 +22,7 @@ data_service = DataService()
 @router.get("/stocks", response_model=StockListResponse)
 async def get_stock_list(
     market: str = "main",
+    data_source: Optional[str] = None,
     current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
 ):
     """
@@ -32,7 +33,7 @@ async def get_stock_list(
     """
     try:
         # 普通用户只能从数据库读取，不使用 force_from_api
-        df = data_service.get_stock_list(market=market, force_from_api=False)
+        df = data_service.get_stock_list(market=market, force_from_api=False, data_source=data_source)
         
         stocks = []
         for _, row in df.iterrows():
@@ -84,6 +85,8 @@ async def get_kline_data(
     stock_code: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    adjust: Optional[str] = "qfq",
+    data_source: Optional[str] = None,
     current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
 ):
     """获取日K线数据"""
@@ -92,6 +95,8 @@ async def get_kline_data(
             stock_code=stock_code,
             start_date=start_date,
             end_date=end_date,
+            adjust=adjust,
+            data_source=data_source,
         )
         # 将DataFrame转换为字典列表
         df = df.copy()
@@ -165,10 +170,14 @@ async def get_chip_distribution(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"计算筹码分布失败: {str(e)}",
         )
+
+
 @router.post("/fetch", response_model=FetchDataResponse)
 async def fetch_data(
     request: FetchDataRequest,
-    current_user_id: Annotated[int, Depends(get_current_user_id)],
+    adjust: str = "qfq",
+    data_source: Optional[str] = None,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
 ):
     """
     触发数据获取
@@ -176,7 +185,11 @@ async def fetch_data(
     用于从数据源获取单只股票的数据（任何登录用户均可调用）
     """
     try:
-        task_id = data_service.fetch_stock_data(request.stock_code or "")
+        task_id = data_service.fetch_stock_data(
+            request.stock_code or "",
+            data_source=data_source,
+            adjust=adjust,
+        )
         return FetchDataResponse(
             task_id=task_id,
             message=f"数据获取任务已启动: {task_id}",
@@ -194,7 +207,7 @@ async def get_fetch_status(
     current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
 ):
     """查询数据获取状态"""
-    # TODO: 实现任务状态查询
+    # 当前为同步任务，fetch 完成后即返回 completed
     return {"task_id": task_id, "status": "completed", "message": "任务已完成"}
 
 

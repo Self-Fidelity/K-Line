@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
+from typing import Annotated, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.app.api.auth import get_current_user
 from backend.app.models.aggregation_scheme import AggregationScheme, AggregationSchemeCreate
 from backend.app.services.aggregation_scheme_service import AggregationSchemeService
 
@@ -11,7 +12,10 @@ router = APIRouter(
 service = AggregationSchemeService()
 
 @router.post("/", response_model=dict)
-async def create_scheme(scheme: AggregationSchemeCreate):
+async def create_scheme(
+    scheme: AggregationSchemeCreate,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
     """创建策略聚合方案"""
     scheme_id = service.create_scheme(scheme)
     if not scheme_id:
@@ -19,12 +23,18 @@ async def create_scheme(scheme: AggregationSchemeCreate):
     return {"id": scheme_id, "message": "保存成功"}
 
 @router.get("/", response_model=List[AggregationScheme])
-async def get_schemes(stock_code: Optional[str] = Query(None)):
+async def get_schemes(
+    stock_code: Optional[str] = Query(None),
+    current_user: Annotated[dict, Depends(get_current_user)] = None,
+):
     """获取策略聚合方案列表"""
     return service.get_schemes(stock_code)
 
 @router.delete("/{scheme_id}")
-async def delete_scheme(scheme_id: int):
+async def delete_scheme(
+    scheme_id: int,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
     """删除策略聚合方案"""
     success = service.delete_scheme(scheme_id)
     if not success:

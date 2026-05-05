@@ -30,10 +30,10 @@ export interface KlineData {
 }
 
 export const dataAPI = {
-  getStockList: async (market: string = 'main'): Promise<StockListResponse> => {
+  getStockList: async (market: string = 'main', dataSource?: string): Promise<StockListResponse> => {
     // 注意：refresh 参数已移除，普通用户只能从数据库读取
     const response = await apiClient.get<StockListResponse>('/api/data/stocks', {
-      params: { market },
+      params: { market, data_source: dataSource },
     })
     return response.data
   },
@@ -63,17 +63,21 @@ export const dataAPI = {
   getKlineData: async (
     stockCode: string,
     startDate?: string,
-    endDate?: string
+    endDate?: string,
+    adjust: string = 'qfq',
+    dataSource?: string,
   ): Promise<KlineData[]> => {
     const response = await apiClient.get<KlineData[]>(`/api/data/stocks/${stockCode}/kline`, {
-      params: { start_date: startDate, end_date: endDate },
+      params: { start_date: startDate, end_date: endDate, adjust, data_source: dataSource },
     })
     return response.data
   },
 
-  fetchStockData: async (stockCode: string): Promise<{ task_id: string; message: string }> => {
+  fetchStockData: async (stockCode: string, adjust: string = 'qfq', dataSource?: string): Promise<{ task_id: string; message: string }> => {
     const response = await apiClient.post<{ task_id: string; message: string }>('/api/data/fetch', {
       stock_code: stockCode,
+    }, {
+      params: { adjust, data_source: dataSource }
     })
     return response.data
   },
@@ -89,6 +93,11 @@ export const dataAPI = {
       date: response.data.date
     };
   },
+
+  getCurrentDataSource: async (): Promise<DataSourceConfig> => {
+    const response = await apiClient.get<DataSourceConfig>('/api/admin/data-update/data-source')
+    return response.data
+  },
 }
 
 export interface ChipDistributionData {
@@ -96,4 +105,9 @@ export interface ChipDistributionData {
   chips: number[];
   currentPrice: number;
   date?: string;
+}
+
+export interface DataSourceConfig {
+  data_source: string;
+  tushare_token?: string;
 }

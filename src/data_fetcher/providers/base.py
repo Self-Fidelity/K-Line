@@ -19,7 +19,7 @@ class BaseDataProvider(ABC):
         stock_code: str,
         start_date: str = "",
         end_date: str = "",
-        adjust: str = "hfq",
+        adjust: str = "qfq",
     ) -> pd.DataFrame:
         """获取单只股票的日K线数据
         

@@ -1,5 +1,6 @@
 """数据更新服务：管理定时任务和手动更新"""
 
+import asyncio
 import time
 import random
 import gc
@@ -249,12 +250,12 @@ class DataUpdateService:
                 finally:
                     if i < total - 1:
                         sleep_time = speed["base"] + random.uniform(speed["jitter_min"], speed["jitter_max"])
-                        time.sleep(sleep_time)
+                        await asyncio.sleep(sleep_time)
 
                         if (i + 1) % batch_size == 0:
                             logger.info(f"[DataUpdate] 批次休息 {batch_rest}s，执行内存回收...")
                             gc.collect()
-                            time.sleep(batch_rest)
+                            await asyncio.sleep(batch_rest)
 
             total_elapsed = (time.time() - start_time) / 3600
             logger.info(
@@ -281,7 +282,7 @@ class DataUpdateService:
 
         logger.info(f"[DataUpdate] 开始股票列表自动更新，随机等待 {wait:.0f} 秒...")
         try:
-            time.sleep(wait)
+            await asyncio.sleep(wait)
             self.data_service.get_stock_list(market="all", force_from_api=True)
             logger.info("[DataUpdate] 股票列表自动更新完成")
         except Exception as e:

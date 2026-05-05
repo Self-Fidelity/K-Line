@@ -118,13 +118,18 @@ def get_current_user_id(
 def get_current_user(
     current_user_id: Annotated[int, Depends(get_current_user_id)],
 ) -> dict:
-    """获取当前用户（包含角色信息）"""
+    """获取当前用户（包含角色信息），并校验用户是否处于活跃状态"""
     storage = get_storage()
     user = _get_user_by_id(storage, current_user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在",
+        )
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户已禁用",
         )
     return user
 

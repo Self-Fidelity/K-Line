@@ -6,6 +6,14 @@ echo    K-Line System Launcher
 echo ==========================================
 echo.
 
+REM Quick check: warn if venv or node_modules missing
+if not exist ".venv\Scripts\activate.bat" (
+    echo [WARNING] .venv not found. Make sure virtual env is set up.
+)
+if not exist "frontend\node_modules" (
+    echo [WARNING] frontend\node_modules not found. Run: cd frontend ^&^& npm install
+)
+
 echo [1/3] Starting backend (http://localhost:8000)...
 start "K-Line Backend" cmd /k "cd /d %~dp0 && .venv\Scripts\activate.bat && set DATABASE_TYPE=sqlite && uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000"
 

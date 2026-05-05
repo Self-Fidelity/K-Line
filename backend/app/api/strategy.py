@@ -15,7 +15,6 @@ from backend.app.models.strategy import (
     StrategyAnalyzeResponse,
     StrategyCompareRequest,
     StrategyCompareResponse,
-    OptimizeResponse,  # 新增
 )
 from backend.app.services.strategy_service import StrategyService
 
@@ -37,11 +36,6 @@ class OptimizeRequest(BaseModel):
     target_metric: str = "sharpe_ratio"
     num_particles: int = 10
     max_iter: int = 10
-
-class OptimizeResponse(BaseModel):
-    best_params: Dict[str, Any]
-    best_score: float
-    method: str
 
 
 @router.get("/list", response_model=StrategyListResponse)
@@ -256,7 +250,10 @@ async def optimize_strategy(
 
 
 @router.get("/optimize/progress/{task_id}")
-async def get_optimization_progress(task_id: str):
+async def get_optimization_progress(
+    task_id: str,
+    current_user_id: Annotated[int, Depends(get_current_user_id)] = None,
+):
     """获取优化进度"""
     progress = progress_manager.get_progress(task_id)
     if not progress:

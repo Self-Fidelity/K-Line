@@ -82,7 +82,7 @@
         </el-form-item>
 
         <el-form-item label="股票">
-          <div style="display: flex; gap: 5px; align-items: center;">
+          <div class="input-group-flex">
             <el-dropdown trigger="click" @command="handleFavoriteSelect">
               <el-button :icon="Collection" circle title="我的收藏" />
               <template #dropdown>
@@ -172,7 +172,7 @@
             </div>
             <KlineChart
               v-if="activeChartTab === 'kline' && klineData.length > 0"
-              :key="`kline-${analysisResult?.stock_code}-${analysisResult?.strategy_name}-${Date.now()}`"
+              :key="`kline-${analysisResult?.stock_code}-${analysisResult?.strategy_name}`"
               :data="klineData"
               :markers="signalMarkers"
               :lines="indicatorLines"
@@ -184,7 +184,7 @@
             />
             <KlineChart
               v-if="activeChartTab === 'equity' && equityLines.length > 0"
-              :key="`equity-${analysisResult?.stock_code}-${analysisResult?.strategy_name}-${Date.now()}`"
+              :key="`equity-${analysisResult?.stock_code}-${analysisResult?.strategy_name}`"
               :data="[]"
               :lines="equityLines"
               autosize
@@ -430,11 +430,12 @@ import { useDark } from '@vueuse/core'
 import { strategyAPI, type StrategyInfo, type StrategyAnalyzeResponse } from '@/api/strategy'
 import { paramSetsAPI, type ParamSet } from '@/api/param-sets'
 import { customStrategyAPI } from '@/api/customStrategy'
-import { dataAPI } from '@/api/data'
+import { useStockDataStore } from '@/stores/stockData'
 import { watchlistAPI, type WatchlistItem } from '@/api/watchlist'
 import KlineChart, { type ChartData, type Marker, type LineData } from '@/components/KlineChart.vue'
 
 const isDark = useDark()
+const stockDataStore = useStockDataStore()
 
 // --- State ---
 const strategies = ref<StrategyInfo[]>([])
@@ -957,7 +958,7 @@ const handleStrategyChange = async (strategyName: string) => {
 const searchStocks = async (query: string, cb: any) => {
   if (!query) return cb([])
   try {
-    const res = await dataAPI.getStockList('all')
+    const res = await stockDataStore.getStockList('all')
     const results = res.stocks
       .filter(s => s.code.includes(query) || s.name.includes(query))
       .slice(0, 10)
@@ -1189,6 +1190,12 @@ html.dark .stat-item .value {
 
 .up { color: #f56c6c !important; }
 .down { color: #67c23a !important; }
+
+.input-group-flex {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
 
 .stock-code {
   float: left;

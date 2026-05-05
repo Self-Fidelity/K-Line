@@ -84,7 +84,7 @@ class StockDataFetcher:
         stock_code: str,
         start_date: str = "",
         end_date: str = "",
-        adjust: str = "hfq",
+        adjust: str = "qfq",
     ) -> pd.DataFrame:
         """
         获取单只股票的日K线数据
@@ -100,7 +100,7 @@ class StockDataFetcher:
         """
         return self._get_provider().get_daily_data(stock_code, start_date, end_date, adjust)
     
-    def get_latest_data(self, stock_code: str, adjust: str = "hfq") -> pd.DataFrame:
+    def get_latest_data(self, stock_code: str, adjust: str = "qfq") -> pd.DataFrame:
         """
         获取单只股票的最新数据（最近一个交易日）
         
@@ -118,7 +118,7 @@ class StockDataFetcher:
         stock_codes: List[str],
         start_date: str = "",
         end_date: str = "",
-        adjust: str = "hfq",
+        adjust: str = "qfq",
     ) -> Dict[str, pd.DataFrame]:
         """
         批量获取多只股票的日K线数据

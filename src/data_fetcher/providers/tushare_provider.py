@@ -7,11 +7,12 @@ import pandas as pd
 
 from src.utils.logger import get_logger
 from src.config import settings
+from src.data_fetcher.providers.base import BaseDataProvider
 
 logger = get_logger(__name__)
 
 
-class TushareProvider:
+class TushareProvider(BaseDataProvider):
     """Tushare Pro 数据获取 Provider
     
     批量查询优化策略：
@@ -210,7 +211,7 @@ class TushareProvider:
         stock_code: str,
         start_date: str = "",
         end_date: str = "",
-        adjust: str = "hfq",
+        adjust: str = "qfq",
     ) -> pd.DataFrame:
         """获取单只股票的日K线数据"""
         logger.debug(f"[Tushare] 获取股票 {stock_code} 的日K线数据，日期范围: {start_date} ~ {end_date}")
@@ -242,6 +243,23 @@ class TushareProvider:
                 
                 # 标准化列名
                 df = self._standardize_columns(df)
+                
+                # 获取换手率（daily 接口不包含 turnover）
+                try:
+                    basic_params = {"ts_code": ts_code}
+                    if start_date:
+                        basic_params["start_date"] = start_date
+                    if end_date:
+                        basic_params["end_date"] = end_date
+                    basic_df = pro.daily_basic(**basic_params)
+                    if not basic_df.empty and "turnover_rate" in basic_df.columns:
+                        basic_df = basic_df[["trade_date", "turnover_rate"]].copy()
+                        basic_df["trade_date"] = pd.to_datetime(basic_df["trade_date"], format="%Y%m%d")
+                        basic_df = basic_df.rename(columns={"trade_date": "date", "turnover_rate": "turnover"})
+                        df = df.merge(basic_df, on="date", how="left")
+                    time.sleep(self.request_interval)
+                except Exception as e:
+                    logger.warning(f"[Tushare] 获取换手率数据失败: {e}")
                 
                 # 按日期升序排列
                 df = df.sort_values("date").reset_index(drop=True)
@@ -322,7 +340,7 @@ class TushareProvider:
         required_columns = ["date", "open", "close", "high", "low", "volume", "amount"]
         available_columns = [col for col in required_columns if col in df.columns]
         
-        optional_columns = ["pct_chg", "change"]
+        optional_columns = ["pct_chg", "change", "turnover"]
         for col in optional_columns:
             if col in df.columns:
                 available_columns.append(col)

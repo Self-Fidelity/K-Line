@@ -15,7 +15,17 @@ logger = get_logger(__name__)
 
 class SQLiteStorage(DataStorage):
     """SQLite 数据存储实现"""
-    
+
+    _USER_COLUMNS = frozenset({
+        "username", "email", "hashed_password", "role",
+        "max_watchlist_count", "is_active", "updated_at",
+    })
+    _CUSTOM_STRATEGY_COLUMNS = frozenset({
+        "user_id", "name", "description", "detailed_description",
+        "code", "parameter_descriptions", "file_path",
+        "is_public", "is_system", "updated_at",
+    })
+
     def __init__(self, database_path: Optional[str] = None):
         """
         初始化 SQLite 存储
@@ -51,13 +61,14 @@ class SQLiteStorage(DataStorage):
                 logger.info("检测到旧版 stock_daily_kline 表，执行迁移...")
                 cursor.execute("ALTER TABLE stock_daily_kline RENAME TO stock_daily_kline_old")
                 
-                # 创建新表（含 data_source）
+                # 创建新表（含 data_source 和 adjust）
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS stock_daily_kline (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         stock_code TEXT NOT NULL,
                         trade_date TEXT NOT NULL,
                         data_source TEXT NOT NULL DEFAULT 'akshare',
+                        adjust TEXT NOT NULL DEFAULT 'qfq',
                         open REAL NOT NULL,
                         close REAL NOT NULL,
                         high REAL NOT NULL,
@@ -68,16 +79,16 @@ class SQLiteStorage(DataStorage):
                         change REAL,
                         turnover REAL,
                         update_time TEXT NOT NULL,
-                        UNIQUE(stock_code, trade_date, data_source)
+                        UNIQUE(stock_code, trade_date, data_source, adjust)
                     )
                 """)
                 
-                # 导入旧数据（默认标记为 akshare）
+                # 导入旧数据（默认标记为 akshare, adjust=hfq）
                 cursor.execute("""
                     INSERT INTO stock_daily_kline 
-                        (stock_code, trade_date, data_source, open, close, high, low, volume,
+                        (stock_code, trade_date, data_source, adjust, open, close, high, low, volume,
                          amount, pct_chg, change, turnover, update_time)
-                    SELECT stock_code, trade_date, 'akshare', open, close, high, low, volume,
+                    SELECT stock_code, trade_date, 'akshare', 'hfq', open, close, high, low, volume,
                            amount, pct_chg, change, turnover, update_time
                     FROM stock_daily_kline_old
                 """)
@@ -85,6 +96,43 @@ class SQLiteStorage(DataStorage):
                 # 删除旧表
                 cursor.execute("DROP TABLE stock_daily_kline_old")
                 logger.info(f"表迁移完成，已导入 {cursor.rowcount} 条历史数据")
+            elif existing_columns and 'adjust' not in existing_columns:
+                # 迁移：添加 adjust 列（旧数据为后复权 hfq）
+                logger.info("检测到 stock_daily_kline 表缺少 adjust 列，执行迁移...")
+                cursor.execute("ALTER TABLE stock_daily_kline RENAME TO stock_daily_kline_old")
+                
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS stock_daily_kline (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        stock_code TEXT NOT NULL,
+                        trade_date TEXT NOT NULL,
+                        data_source TEXT NOT NULL DEFAULT 'akshare',
+                        adjust TEXT NOT NULL DEFAULT 'qfq',
+                        open REAL NOT NULL,
+                        close REAL NOT NULL,
+                        high REAL NOT NULL,
+                        low REAL NOT NULL,
+                        volume REAL NOT NULL,
+                        amount REAL,
+                        pct_chg REAL,
+                        change REAL,
+                        turnover REAL,
+                        update_time TEXT NOT NULL,
+                        UNIQUE(stock_code, trade_date, data_source, adjust)
+                    )
+                """)
+                
+                cursor.execute("""
+                    INSERT INTO stock_daily_kline 
+                        (stock_code, trade_date, data_source, adjust, open, close, high, low, volume,
+                         amount, pct_chg, change, turnover, update_time)
+                    SELECT stock_code, trade_date, data_source, 'hfq', open, close, high, low, volume,
+                           amount, pct_chg, change, turnover, update_time
+                    FROM stock_daily_kline_old
+                """)
+                
+                cursor.execute("DROP TABLE stock_daily_kline_old")
+                logger.info(f"adjust 列迁移完成，已导入 {cursor.rowcount} 条历史数据")
             else:
                 # 直接创建新表（首次初始化）
                 cursor.execute("""
@@ -93,6 +141,7 @@ class SQLiteStorage(DataStorage):
                         stock_code TEXT NOT NULL,
                         trade_date TEXT NOT NULL,
                         data_source TEXT NOT NULL DEFAULT 'akshare',
+                        adjust TEXT NOT NULL DEFAULT 'qfq',
                         open REAL NOT NULL,
                         close REAL NOT NULL,
                         high REAL NOT NULL,
@@ -103,7 +152,7 @@ class SQLiteStorage(DataStorage):
                         change REAL,
                         turnover REAL,
                         update_time TEXT NOT NULL,
-                        UNIQUE(stock_code, trade_date, data_source)
+                        UNIQUE(stock_code, trade_date, data_source, adjust)
                     )
                 """)
             
@@ -114,12 +163,12 @@ class SQLiteStorage(DataStorage):
             
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_kline_by_stock 
-                ON stock_daily_kline(stock_code, data_source, trade_date)
+                ON stock_daily_kline(stock_code, data_source, adjust, trade_date)
             """)
             
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_kline_by_date 
-                ON stock_daily_kline(trade_date, data_source, stock_code)
+                ON stock_daily_kline(trade_date, data_source, adjust, stock_code)
             """)
 
             # 创建策略参数表（旧版，保留向后兼容）
@@ -158,6 +207,24 @@ class SQLiteStorage(DataStorage):
             
             # 初始化策略聚合方案表
             self._init_aggregation_schemes_table(cursor)
+            
+            # 创建自定义策略表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS custom_strategies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    detailed_description TEXT DEFAULT '',
+                    code TEXT NOT NULL,
+                    parameter_descriptions TEXT DEFAULT '{}',
+                    file_path TEXT,
+                    is_public INTEGER DEFAULT 0,
+                    is_system INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT
+                )
+            """)
             
             # 创建参数集索引
             cursor.execute("""
@@ -230,6 +297,18 @@ class SQLiteStorage(DataStorage):
                 )
             """)
             
+            # ── 自动迁移：为旧表添加后续版本新增的列 ──
+            def _col_exists(table: str, col: str) -> bool:
+                cursor.execute(f"PRAGMA table_info({table})")
+                return any(row[1] == col for row in cursor.fetchall())
+            
+            if not _col_exists("users", "updated_at"):
+                cursor.execute("ALTER TABLE users ADD COLUMN updated_at TEXT")
+            if not _col_exists("watchlist", "stock_name"):
+                cursor.execute("ALTER TABLE watchlist ADD COLUMN stock_name TEXT")
+            if not _col_exists("watchlist", "notes"):
+                cursor.execute("ALTER TABLE watchlist ADD COLUMN notes TEXT")
+            
             conn.commit()
             logger.info(f"数据库初始化完成: {self.database_path}")
             
@@ -245,6 +324,7 @@ class SQLiteStorage(DataStorage):
         data: pd.DataFrame,
         stock_code: str,
         data_source: str = "akshare",
+        adjust: str = "qfq",
     ) -> bool:
         """
         保存日K线数据（支持增量更新，自动去重）
@@ -252,6 +332,8 @@ class SQLiteStorage(DataStorage):
         Args:
             data: 日K线数据 DataFrame，必须包含列：date, open, close, high, low, volume
             stock_code: 股票代码
+            data_source: 数据来源，'akshare' 或 'tushare'
+            adjust: 复权方式，'qfq'（前复权）、'hfq'（后复权）、'none'（不复权）
         
         Returns:
             是否保存成功
@@ -284,6 +366,7 @@ class SQLiteStorage(DataStorage):
                     "stock_code": stock_code,
                     "trade_date": row["trade_date"],
                     "data_source": data_source,
+                    "adjust": adjust,
                     "open": float(row["open"]),
                     "close": float(row["close"]),
                     "high": float(row["high"]),
@@ -301,9 +384,9 @@ class SQLiteStorage(DataStorage):
             cursor = conn.cursor()
             insert_sql = """
                 INSERT OR REPLACE INTO stock_daily_kline 
-                (stock_code, trade_date, data_source, open, close, high, low, volume, 
+                (stock_code, trade_date, data_source, adjust, open, close, high, low, volume, 
                  amount, pct_chg, change, turnover, update_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
 
             # 准备批量参数列表
@@ -312,6 +395,7 @@ class SQLiteStorage(DataStorage):
                     record["stock_code"],
                     record["trade_date"],
                     record["data_source"],
+                    record["adjust"],
                     record["open"],
                     record["close"],
                     record["high"],
@@ -329,7 +413,7 @@ class SQLiteStorage(DataStorage):
             cursor.executemany(insert_sql, batch_params)
             
             conn.commit()
-            logger.info(f"股票 {stock_code} ({data_source}) 保存了 {len(records)} 条数据")
+            logger.info(f"股票 {stock_code} ({data_source}, {adjust}) 保存了 {len(records)} 条数据")
             return True
             
         except Exception as e:
@@ -345,6 +429,7 @@ class SQLiteStorage(DataStorage):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         data_source: Optional[str] = None,
+        adjust: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         获取日K线数据
@@ -353,6 +438,8 @@ class SQLiteStorage(DataStorage):
             stock_code: 股票代码
             start_date: 开始日期（格式：'20240101'）
             end_date: 结束日期（格式：'20240101'）
+            data_source: 数据来源过滤，None 则返回所有来源
+            adjust: 复权方式过滤，None 则返回所有复权方式
         
         Returns:
             日K线数据 DataFrame
@@ -365,6 +452,10 @@ class SQLiteStorage(DataStorage):
             if data_source:
                 query += " AND data_source = ?"
                 params.append(data_source)
+            
+            if adjust:
+                query += " AND adjust = ?"
+                params.append(adjust)
             
             if start_date:
                 query += " AND trade_date >= ?"
@@ -392,13 +483,14 @@ class SQLiteStorage(DataStorage):
         finally:
             conn.close()
     
-    def get_latest_date(self, stock_code: str, data_source: Optional[str] = None) -> Optional[str]:
+    def get_latest_date(self, stock_code: str, data_source: Optional[str] = None, adjust: Optional[str] = None) -> Optional[str]:
         """
         获取指定股票的最新数据日期
         
         Args:
             stock_code: 股票代码
             data_source: 数据来源过滤，None 则查询所有来源
+            adjust: 复权方式过滤，None 则查询所有复权方式
         
         Returns:
             最新日期字符串（格式：'20240101'），如果没有数据返回 None
@@ -406,16 +498,19 @@ class SQLiteStorage(DataStorage):
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            conditions = ["stock_code = ?"]
+            params: list[Any] = [stock_code]
             if data_source:
-                cursor.execute(
-                    "SELECT MAX(trade_date) as latest_date FROM stock_daily_kline WHERE stock_code = ? AND data_source = ?",
-                    (stock_code, data_source),
-                )
-            else:
-                cursor.execute(
-                    "SELECT MAX(trade_date) as latest_date FROM stock_daily_kline WHERE stock_code = ?",
-                    (stock_code,),
-                )
+                conditions.append("data_source = ?")
+                params.append(data_source)
+            if adjust:
+                conditions.append("adjust = ?")
+                params.append(adjust)
+            where_clause = " AND ".join(conditions)
+            cursor.execute(
+                f"SELECT MAX(trade_date) as latest_date FROM stock_daily_kline WHERE {where_clause}",
+                tuple(params),
+            )
             result = cursor.fetchone()
             
             if result and result["latest_date"]:
@@ -428,22 +523,25 @@ class SQLiteStorage(DataStorage):
         finally:
             conn.close()
 
-    def get_all_latest_dates(self, data_source: Optional[str] = None) -> dict:
+    def get_all_latest_dates(self, data_source: Optional[str] = None, adjust: Optional[str] = None) -> dict:
         """批量获取所有股票的最新数据日期（单次查询，避免 N+1）"""
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            conditions = []
+            params: list[Any] = []
             if data_source:
-                cursor.execute(
-                    "SELECT stock_code, MAX(trade_date) as latest_date "
-                    "FROM stock_daily_kline WHERE data_source = ? GROUP BY stock_code",
-                    (data_source,)
-                )
-            else:
-                cursor.execute(
-                    "SELECT stock_code, MAX(trade_date) as latest_date "
-                    "FROM stock_daily_kline GROUP BY stock_code"
-                )
+                conditions.append("data_source = ?")
+                params.append(data_source)
+            if adjust:
+                conditions.append("adjust = ?")
+                params.append(adjust)
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            cursor.execute(
+                f"SELECT stock_code, MAX(trade_date) as latest_date "
+                f"FROM stock_daily_kline {where_clause} GROUP BY stock_code",
+                tuple(params) if params else (),
+            )
             rows = cursor.fetchall()
             return {row["stock_code"]: row["latest_date"] for row in rows} if rows else {}
         except Exception as e:
@@ -456,7 +554,8 @@ class SQLiteStorage(DataStorage):
         self,
         stock_code: str,
         trade_date: str,
-        data_source: str = "akshare",
+        data_source: Optional[str] = None,
+        adjust: Optional[str] = None,
     ) -> bool:
         """
         检查指定日期的数据是否存在
@@ -464,7 +563,8 @@ class SQLiteStorage(DataStorage):
         Args:
             stock_code: 股票代码
             trade_date: 交易日期（格式：'20240101'）
-            data_source: 数据来源
+            data_source: 数据来源过滤，None 则查询所有来源
+            adjust: 复权方式过滤，None 则查询所有复权方式
         
         Returns:
             如果数据存在返回 True，否则返回 False
@@ -472,9 +572,18 @@ class SQLiteStorage(DataStorage):
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            conditions = ["stock_code = ?", "trade_date = ?"]
+            params: list[Any] = [stock_code, trade_date]
+            if data_source:
+                conditions.append("data_source = ?")
+                params.append(data_source)
+            if adjust:
+                conditions.append("adjust = ?")
+                params.append(adjust)
+            where_clause = " AND ".join(conditions)
             cursor.execute(
-                "SELECT COUNT(*) as count FROM stock_daily_kline WHERE stock_code = ? AND trade_date = ? AND data_source = ?",
-                (stock_code, trade_date, data_source),
+                f"SELECT COUNT(*) as count FROM stock_daily_kline WHERE {where_clause}",
+                tuple(params),
             )
             result = cursor.fetchone()
             return result["count"] > 0 if result else False
@@ -485,12 +594,13 @@ class SQLiteStorage(DataStorage):
         finally:
             conn.close()
     
-    def get_all_stocks(self, data_source: Optional[str] = None) -> list[str]:
+    def get_all_stocks(self, data_source: Optional[str] = None, adjust: Optional[str] = None) -> list[str]:
         """
         获取数据库中所有股票代码列表
         
         Args:
             data_source: 数据来源过滤，None 则返回所有来源
+            adjust: 复权方式过滤，None 则返回所有复权方式
         
         Returns:
             股票代码列表
@@ -498,10 +608,19 @@ class SQLiteStorage(DataStorage):
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            conditions = []
+            params: list[Any] = []
             if data_source:
+                conditions.append("data_source = ?")
+                params.append(data_source)
+            if adjust:
+                conditions.append("adjust = ?")
+                params.append(adjust)
+            if conditions:
+                where_clause = "WHERE " + " AND ".join(conditions)
                 cursor.execute(
-                    "SELECT DISTINCT stock_code FROM stock_daily_kline WHERE data_source = ? ORDER BY stock_code",
-                    (data_source,)
+                    f"SELECT DISTINCT stock_code FROM stock_daily_kline {where_clause} ORDER BY stock_code",
+                    tuple(params),
                 )
             else:
                 cursor.execute("SELECT DISTINCT stock_code FROM stock_daily_kline ORDER BY stock_code")
@@ -665,11 +784,22 @@ class SQLiteStorage(DataStorage):
                 )
             
             sql = """
-                INSERT OR REPLACE INTO strategy_param_sets
+                INSERT INTO strategy_param_sets
                 (stock_code, strategy_name, name, description, params, param_ranges,
                  target_metric, best_score, optimization_method, num_particles, max_iter,
                  date_range, created_at, is_default)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(stock_code, strategy_name, name) DO UPDATE SET
+                    description=excluded.description,
+                    params=excluded.params,
+                    param_ranges=excluded.param_ranges,
+                    target_metric=excluded.target_metric,
+                    best_score=excluded.best_score,
+                    optimization_method=excluded.optimization_method,
+                    num_particles=excluded.num_particles,
+                    max_iter=excluded.max_iter,
+                    date_range=excluded.date_range,
+                    is_default=excluded.is_default
             """
             
             cursor.execute(sql, (
@@ -690,7 +820,10 @@ class SQLiteStorage(DataStorage):
             ))
             
             conn.commit()
-            param_set_id = cursor.lastrowid
+            param_set_id = cursor.execute(
+                "SELECT id FROM strategy_param_sets WHERE stock_code=? AND strategy_name=? AND name=?",
+                (stock_code, strategy_name, name)
+            ).fetchone()[0]
             logger.info(f"保存参数集成功: {stock_code}/{strategy_name}/{name}, ID={param_set_id}")
             return param_set_id
         
@@ -980,6 +1113,26 @@ class SQLiteStorage(DataStorage):
         finally:
             conn.close()
 
+    def get_aggregation_scheme_by_id(self, scheme_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取聚合方案"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            self._init_aggregation_schemes_table(cursor)
+            cursor.execute("SELECT * FROM aggregation_schemes WHERE id = ?", (scheme_id,))
+            row = cursor.fetchone()
+            if row:
+                result = dict(row)
+                result['strategies'] = json.loads(result['strategies'])
+                result['required_strategies'] = json.loads(result['required_strategies'])
+                return result
+            return None
+        except Exception as e:
+            logger.error(f"获取聚合方案失败: {e}", exc_info=True)
+            return None
+        finally:
+            conn.close()
+
     # ==================== 自定义策略管理 ====================
 
     def create_custom_strategy(
@@ -997,23 +1150,6 @@ class SQLiteStorage(DataStorage):
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            # 确保表存在
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS custom_strategies (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    name TEXT NOT NULL,
-                    description TEXT DEFAULT '',
-                    detailed_description TEXT DEFAULT '',
-                    code TEXT NOT NULL,
-                    parameter_descriptions TEXT DEFAULT '{}',
-                    file_path TEXT,
-                    is_public INTEGER DEFAULT 0,
-                    is_system INTEGER DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT
-                )
-            """)
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
                 "INSERT INTO custom_strategies (user_id, name, description, detailed_description, code, parameter_descriptions, file_path, is_public, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1079,8 +1215,11 @@ class SQLiteStorage(DataStorage):
         try:
             cursor = conn.cursor()
             fields["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            set_clause = ", ".join(f"{k} = ?" for k in fields)
-            values = list(fields.values()) + [strategy_id]
+            allowed = {k: v for k, v in fields.items() if k in self._CUSTOM_STRATEGY_COLUMNS}
+            if not allowed:
+                return False
+            set_clause = ", ".join(f"{k} = ?" for k in allowed)
+            values = list(allowed.values()) + [strategy_id]
             cursor.execute(f"UPDATE custom_strategies SET {set_clause} WHERE id = ?", values)
             conn.commit()
             return True
@@ -1111,19 +1250,6 @@ class SQLiteStorage(DataStorage):
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            # 确保 users 表存在
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT NOT NULL UNIQUE,
-                    email TEXT,
-                    hashed_password TEXT NOT NULL,
-                    role TEXT DEFAULT 'user',
-                    max_watchlist_count INTEGER DEFAULT 20,
-                    is_active INTEGER DEFAULT 1,
-                    created_at TEXT NOT NULL
-                )
-            """)
             query = """
                 SELECT cs.*, u.username
                 FROM custom_strategies cs
@@ -1254,11 +1380,14 @@ class SQLiteStorage(DataStorage):
         """更新用户字段"""
         if not fields:
             return False
+        allowed = {k: v for k, v in fields.items() if k in self._USER_COLUMNS}
+        if not allowed:
+            return False
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            set_clause = ", ".join(f"{k} = ?" for k in fields)
-            values = list(fields.values()) + [user_id]
+            set_clause = ", ".join(f"{k} = ?" for k in allowed)
+            values = list(allowed.values()) + [user_id]
             cursor.execute(
                 f"UPDATE users SET {set_clause} WHERE id = ?",
                 values,
@@ -1465,3 +1594,19 @@ class SQLiteStorage(DataStorage):
             conn.commit()
         finally:
             conn.close()
+
+    def close(self) -> None:
+        """关闭存储（SQLite 无持久连接，无需操作）"""
+        pass
+
+    def health_check(self) -> bool:
+        """健康检查"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"SQLite 健康检查失败: {e}")
+            return False

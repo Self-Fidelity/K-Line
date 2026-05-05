@@ -36,6 +36,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url=None if settings.DISABLE_OPENAPI else "/openapi.json",
 )
 
 # 注册速率限制器
@@ -90,8 +91,17 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """健康检查端点"""
-    return JSONResponse(content={"status": "healthy"})
+    """健康检查端点（包含数据库连通性检查）"""
+    try:
+        from backend.app.dependencies import get_storage
+        storage = get_storage()
+        storage.health_check()
+        return JSONResponse(content={"status": "healthy", "database": "connected"})
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "unhealthy", "database": str(e)},
+            status_code=503
+        )
 
 
 # 导入路由

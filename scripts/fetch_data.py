@@ -51,8 +51,8 @@ def fetch_all_stocks(
     
     for i, stock_code in enumerate(stock_codes, 1):
         try:
-            # 检查是否已有数据
-            latest_date = storage.get_latest_date(stock_code, data_source=data_source)
+            # 检查是否已有数据（按前复权检查）
+            latest_date = storage.get_latest_date(stock_code, data_source=data_source, adjust="qfq")
             
             # 如果已有数据且未指定开始日期，则从最新日期之后开始获取
             fetch_start_date = start_date
@@ -62,14 +62,14 @@ def fetch_all_stocks(
                 latest = parse_date(latest_date)
                 next_date = add_trading_days(latest, 1)
                 fetch_start_date = format_date(next_date)
-                logger.debug(f"股票 {stock_code} 已有数据到 {latest_date}，将从 {fetch_start_date} 开始获取")
+                logger.debug(f"股票 {stock_code} 已有 qfq 数据到 {latest_date}，将从 {fetch_start_date} 开始获取")
             
             # 获取数据
             df = fetcher.get_daily_data(
                 stock_code=stock_code,
                 start_date=fetch_start_date,
                 end_date=end_date,
-                adjust="hfq",  # 后复权
+                adjust="qfq",
             )
             
             if not df.empty:
@@ -109,22 +109,22 @@ def fetch_single_stock(stock_code: str, start_date: str = "", end_date: str = ""
     
     data_source = fetcher._get_provider().name
     
-    # 检查是否已有数据
-    latest_date = storage.get_latest_date(stock_code, data_source=data_source)
+    # 检查是否已有数据（按前复权检查）
+    latest_date = storage.get_latest_date(stock_code, data_source=data_source, adjust="qfq")
     fetch_start_date = start_date
     if not fetch_start_date and latest_date:
         from src.utils.date_utils import parse_date, add_trading_days
         latest = parse_date(latest_date)
         next_date = add_trading_days(latest, 1)
         fetch_start_date = format_date(next_date)
-        logger.info(f"股票 {stock_code} 已有数据到 {latest_date}，将从 {fetch_start_date} 开始获取")
+        logger.info(f"股票 {stock_code} 已有 qfq 数据到 {latest_date}，将从 {fetch_start_date} 开始获取")
     
     # 获取数据
     df = fetcher.get_daily_data(
         stock_code=stock_code,
         start_date=fetch_start_date,
         end_date=end_date,
-        adjust="hfq",
+        adjust="qfq",
     )
     
     if not df.empty:

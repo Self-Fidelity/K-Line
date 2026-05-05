@@ -61,6 +61,8 @@ class DataService:
         market: str = "main", 
         refresh: bool = False,
         force_from_api: bool = False,
+        data_source: Optional[str] = None,
+        adjust: str = "qfq",
     ) -> pd.DataFrame:
         """
         获取股票列表（批量获取最新日期，避免 N+1 查询）
@@ -70,6 +72,8 @@ class DataService:
                    'szse'（深圳主板）、'cyb'（创业板）、'kcb'（科创板）、'all'（全部）
             refresh: 是否刷新缓存（已废弃，仅用于兼容）
             force_from_api: 是否强制从 API 获取（仅管理员可用）
+            data_source: 数据来源过滤，None 则使用当前配置的数据源
+            adjust: 复权方式过滤
 
         Returns:
             股票列表 DataFrame，包含字段：code, name, market, latest_date
@@ -81,17 +85,20 @@ class DataService:
         )
 
         # 批量获取最新数据日期（单次 SQL 查询替代 N 次）
-        latest_map = self._get_all_latest_dates()
+        source = data_source or self._get_current_data_source()
+        latest_map = self._get_all_latest_dates(data_source=source, adjust=adjust)
         latest_dates = df["code"].map(latest_map)
         df["latest_date"] = [None if pd.isna(d) else str(d) for d in latest_dates]
 
         return df
 
-    def _get_all_latest_dates(self) -> dict[str, Optional[str]]:
+    def _get_all_latest_dates(self, data_source: Optional[str] = None, adjust: str = "qfq") -> dict[str, Optional[str]]:
         """批量获取所有股票的最新数据日期（单次查询）"""
         try:
+            source = data_source or self._get_current_data_source()
             return self.storage.get_all_latest_dates(
-                data_source=self._get_current_data_source()
+                data_source=source,
+                adjust=adjust,
             )
         except Exception as e:
             logger.error(f"批量获取最新日期失败: {e}")
@@ -103,6 +110,7 @@ class DataService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         data_source: Optional[str] = None,
+        adjust: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         获取日K线数据
@@ -112,6 +120,7 @@ class DataService:
             start_date: 开始日期（格式：'20240101' 或 '2024-01-01'）
             end_date: 结束日期（格式：'20240101' 或 '2024-01-01'）
             data_source: 数据源过滤，None 则使用当前配置的数据源
+            adjust: 复权方式过滤，None 则不过滤
         
         Returns:
             日K线数据 DataFrame
@@ -129,6 +138,7 @@ class DataService:
             start_date=start_date,
             end_date=end_date,
             data_source=source,
+            adjust=adjust,
         )
     
     def get_minute_kline_data(
@@ -153,13 +163,14 @@ class DataService:
         # TODO: 实现分时数据获取（需要在SQLiteStorage中添加相应方法）
         raise NotImplementedError("分时数据获取功能待实现")
     
-    def fetch_stock_data(self, stock_code: str, data_source: Optional[str] = None) -> str:
+    def fetch_stock_data(self, stock_code: str, data_source: Optional[str] = None, adjust: str = "qfq") -> str:
         """
         触发数据获取（异步任务）
         
         Args:
             stock_code: 股票代码
             data_source: 指定数据源，None 则使用当前配置的数据源
+            adjust: 复权方式，'qfq'（前复权）、'hfq'（后复权）、'none'（不复权）
         
         Returns:
             任务ID（目前返回股票代码）
@@ -172,10 +183,10 @@ class DataService:
         else:
             fetcher = self.fetcher
         
-        data = fetcher.get_daily_data(stock_code)
+        data = fetcher.get_daily_data(stock_code, adjust=adjust)
         if not data.empty:
             source = data_source or fetcher._get_provider().name
-            self.storage.save_daily_data(data, stock_code, data_source=source)
+            self.storage.save_daily_data(data, stock_code, data_source=source, adjust=adjust)
         return stock_code
 
     def calculate_chip_distribution(self, stock_code: str, days: int = 120, price_precision: float = 0.1):
